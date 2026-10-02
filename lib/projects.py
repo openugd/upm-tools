@@ -43,7 +43,8 @@ class Node(object):
         self.sources = list(asmdef.sources) if asmdef else []
         self.defines = []
         self.hint_refs = []          # (path, private)
-        self.deps = []               # Node
+        self.deps = []               # Node: project references
+        self.after = []              # Node: build-order only (no reference)
         self.notes = []
         self.docs_as_errors = False
         self.generate_docs = False
@@ -217,6 +218,9 @@ class Graph(object):
                     walk(d)
         walk(faithful)
         n.deps = seen
+        # Run the tests only once the faithful compile has passed: a test that compiles on .NET 10 but not
+        # against Unity's profile must not count as passing.
+        n.after = [faithful]
         if not asmdef.no_engine:
             n.hint_refs += [(r, True) for r in self.unity.engine_refs() + self.unity.editor_refs()]
         for raw in asmdef.references:

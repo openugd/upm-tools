@@ -108,13 +108,14 @@ def build_graph(nodes, log_dir, jobs):
         running = {}
         while pending or running:
             for nid, n in list(pending.items()):
-                failed = [d for d in n.deps if done.get(d.id) is False]
+                prereq = n.deps + n.after
+                failed = [d for d in prereq if done.get(d.id) is False]
                 if failed:
                     n.status = 'BLOCKED'
                     n.reason = 'depends on %s' % ', '.join(sorted(d.id for d in failed))
                     done[nid] = False
                     del pending[nid]
-                elif all(done.get(d.id) for d in n.deps):
+                elif all(done.get(d.id) for d in prereq):
                     running[pool.submit(_build_one, n, log_dir)] = n
                     del pending[nid]
             if not running:
