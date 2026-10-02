@@ -1,0 +1,10 @@
+{
+  "name": "com.upm-tools.fixture.audio-listener",
+  "version": "1.0.0",
+  "displayName": "upm-tools fixture: AudioListener",
+  "description": "Reproduces the com.openugd.corelib defect level 2 caught: a runtime assembly uses UnityEngine.AudioListener (UnityEngine.AudioModule) without declaring com.unity.modules.audio. tests/test_modules.py runs level 1 on a copy, without and with that dependency.",
+  "unity": "6000.0",
+  "dependencies": {
+    "com.unity.ugui": "2.0.0"
+  }
+}

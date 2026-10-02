@@ -1,0 +1,9 @@
+{
+    "name": "upm-tools.fixture.audio-listener.editor",
+    "references": [
+        "upm-tools.fixture.audio-listener"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ]
+}

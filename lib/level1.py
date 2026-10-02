@@ -12,7 +12,9 @@ Steps (all run by default; --steps picks a subset):
   tests    dotnet test every test asmdef with --filter "TestCategory!=RequiresUnity"; the passed count
            must not fall below the per-suite floor in config/test-floors.json
   meta     .meta coverage of each package root against the working tree and git (see lib/meta.py)
-  deps     every family or Unity package an asmdef references must be declared in package.json
+  deps     every family or Unity package an asmdef references must be declared in package.json, and every
+           engine module (com.unity.modules.*) or Unity package assembly a compiled assembly references in its
+           metadata must be guaranteed by package.json, directly or through a declared Unity package
 
 Exit status: 0 all steps passed, 1 the gate failed, 2 the tools could not run.
 """
@@ -29,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import asmdefs as A          # noqa: E402
 import build as B            # noqa: E402
 import meta as M             # noqa: E402
+import modules as MOD        # noqa: E402
 import readme as R           # noqa: E402
 from common import CONFIG, TOOLS, family_config, family_root, load_json, run, selected_repos, table  # noqa: E402
 from projects import DOC_CODES, Graph, write_project  # noqa: E402
@@ -168,6 +171,56 @@ def check_dependencies(family, graph, root):
     return problems
 
 
+def family_names(root, family):
+    names = {p.name for p in family}
+    for cfg in family_config()['packages']:
+        pj = os.path.join(root, cfg['repo'], 'package.json')
+        if os.path.isfile(pj):
+            names.add(load_json(pj)['name'])
+    return names
+
+
+def check_modules(a, root, out, unity, g, family, selected, want, dep_problems, infra):
+    """Engine modules and Unity package assemblies the compiled assemblies reference in their metadata
+    (lib/modules.py). Returns a dict for the report, or None when the editor data or the reader is missing
+    (recorded in ``infra``, which fails the gate)."""
+    try:
+        mm = MOD.ModuleMap.from_editor(unity)
+        infra.extend(mm.problems)
+        tool = MOD.build_asmrefs(out)
+    except MOD.ModuleDataError as e:
+        infra.append('deps: %s' % e)
+        return None
+    candidates = [n for n in want if n.kind in ('runtime', 'editor', 'sample') and n.package in selected]
+    built = [n for n in candidates if n.built and os.path.exists(n.dll)]
+    try:
+        refs = MOD.read_refs(tool, [n.dll for n in built])
+    except MOD.ModuleDataError as e:
+        infra.append('deps: %s' % e)
+        return None
+    judged, unreadable = [], []
+    for n in built:
+        data = refs.get(n.dll) or {'error': 'no output for this file'}
+        if data.get('error'):
+            unreadable.append((n, data['error']))
+        else:
+            judged.append((n.package, n.asmdef, n.variant, data.get('references') or {}))
+    # An assembly that did not compile cannot be judged. The build or samples step fails for it already when
+    # it runs; when it does not run, the deps step must not pass on assemblies it never saw.
+    unjudged = []
+    for n in candidates:
+        if n in built:
+            continue
+        owner_step = 'samples' if n.kind == 'sample' else 'build'
+        unjudged.append((n, owner_step in a.steps))
+    package_assemblies = {asm.name: p.name for p in g.unity_packages for asm in p.asmdefs}
+    reported = {(repo, asm, ref) for repo, asm, ref, _dep in dep_problems}
+    findings, usage, notes = MOD.check(selected, family, judged, mm, package_assemblies,
+                                       family_names(root, family), reported)
+    return {'map': mm, 'findings': findings, 'usage': usage, 'notes': notes, 'unreadable': unreadable,
+            'unjudged': unjudged, 'judged': len(judged)}
+
+
 # --- reporting ------------------------------------------------------------------------------------------
 def rel(path, root):
     try:
@@ -237,6 +290,9 @@ def main(argv):
         kinds.add('sample')
     if 'tests' in a.steps:
         kinds.add('test')
+    if 'deps' in a.steps:
+        # the module check reads the compiled assemblies (tests are exempt, as for asmdef references)
+        kinds |= {'runtime', 'editor', 'sample'}
     for p in selected:
         for asm in p.asmdefs:
             if asm.kind not in kinds:
@@ -345,12 +401,14 @@ def main(argv):
 
     meta_results = M.check_family([p.root for p in selected]) if 'meta' in a.steps else {}
     dep_problems = check_dependencies(selected, g, root) if 'deps' in a.steps else []
+    modules = check_modules(a, root, out, unity, g, family, selected, want, dep_problems, infra) \
+        if 'deps' in a.steps else None
     return report(a, root, out, unity, g, selected, want, canary_nodes, snippet_rows, test_results,
-                  meta_results, dep_problems, infra, time.time() - t0)
+                  meta_results, dep_problems, modules, infra, time.time() - t0)
 
 
 def report(a, root, out, unity, g, selected, want, canary_nodes, snippet_rows, test_results, meta_results,
-           dep_problems, infra, elapsed):
+           dep_problems, modules, infra, elapsed):
     summary = []
     lines = []
     P = lambda s='': lines.append(s)
@@ -442,14 +500,48 @@ def report(a, root, out, unity, g, selected, want, canary_nodes, snippet_rows, t
 
     if 'deps' in a.steps:
         P('== package.json dependencies')
-        if dep_problems:
-            for repo, asm, ref, dep in dep_problems:
-                P('  %s: asmdef %s references %s, but package.json does not declare %s' % (repo, asm, ref, dep))
+        P('asmdef references:')
+        for repo, asm, ref, dep in dep_problems:
+            P('  %s: asmdef %s references %s, but package.json does not declare %s' % (repo, asm, ref, dep))
+        if not dep_problems:
+            P('  ok')
+        bad_modules = 0
+        if modules is None:
+            P('engine modules and Unity package assemblies: not checked (see Tooling problems)')
         else:
-            P('ok')
+            mm = modules['map']
+            P('engine modules and Unity package assemblies, from the compiled metadata (%d assembly variants):'
+              % modules['judged'])
+            P('  Unity %s: %d modules every project has, %d controlled by a com.unity.modules.* package (%s)'
+              % (unity.version, len(mm.always_present), len(mm.controlled), rel(mm.source, root)))
+            rows = []
+            for p in selected:
+                used = modules['usage'].get(p.repo) or {}
+                cells = ['%s -> %s %s' % (ref, need, how if how else 'NOT DECLARED')
+                         for ref, (need, how) in sorted(used.items())]
+                rows.append([p.repo, '; '.join(cells) if cells else 'none needed'])
+            P('\n'.join('  ' + line for line in table(rows, ['package', 'needs a declaration']).splitlines()))
+            for f in modules['findings']:
+                P('  UNDECLARED %s: %s' % (f.repo, f.message()))
+            for n, err in modules['unreadable']:
+                P('  UNREADABLE %s (%s): %s' % (n.name, n.variant, err))
+            for n, reported in modules['unjudged']:
+                step = 'samples' if n.kind == 'sample' else 'build'
+                P('  NOT CHECKED %s (%s): no assembly to read, %s%s%s' % (
+                    n.name, n.variant, n.status, ': ' + n.reason if n.reason else '',
+                    '; the %s step reports it' % step if reported else ''))
+            for note in modules['notes']:
+                P('  note: %s' % note)
+            bad_modules = len(modules['findings']) + len(modules['unreadable']) + \
+                sum(1 for _n, reported in modules['unjudged'] if not reported)
         P()
-        summary.append(('deps', 'FAIL' if dep_problems else 'PASS', '%d undeclared dependency(ies)'
-                        % len(dep_problems)))
+        if modules is None:
+            detail = 'modules not checked'
+        else:
+            detail = '%d undeclared module/assembly use(s), %d assembly variant(s) not checked' % (
+                len(modules['findings']) + len(modules['unreadable']), len(modules['unjudged']))
+        summary.append(('deps', 'FAIL' if dep_problems or bad_modules or modules is None else 'PASS',
+                        '%d undeclared asmdef reference(s), %s' % (len(dep_problems), detail)))
 
     # diagnostics, deduplicated across variants
     P('== Diagnostics (errors first; identical diagnostics from both variants shown once)')
@@ -517,6 +609,17 @@ def report(a, root, out, unity, g, selected, want, canary_nodes, snippet_rows, t
         'tests': test_results,
         'meta': {os.path.basename(k): v for k, v in meta_results.items()},
         'deps': dep_problems,
+        'depsModules': None if modules is None else {
+            'unity': unity.version,
+            'source': modules['map'].source,
+            'alwaysPresent': modules['map'].always_present,
+            'findings': [f.as_dict() for f in modules['findings']],
+            'usage': {repo: {ref: {'needs': need, 'how': how} for ref, (need, how) in used.items()}
+                      for repo, used in modules['usage'].items()},
+            'unreadable': [{'id': n.id, 'error': err} for n, err in modules['unreadable']],
+            'unchecked': [{'id': n.id, 'reportedByStep': reported} for n, reported in modules['unjudged']],
+            'notes': modules['notes'],
+        },
         'tooling': infra,
     }
     with open(os.path.join(out, 'level1-report.json'), 'w') as f:

@@ -19,7 +19,8 @@ Every script prints its options with `--help`. None of them pushes, adds a remot
   `6000.0.41f1` is the default. `6000.3.3f1` is also supported. Both install layouts are handled: 6000.0
   keeps the scripting files in `Unity.app/Contents`, 6000.3 in `Unity.app/Contents/Resources/Scripting`.
 - Python 3.9 or newer (the system `python3` is enough; no third-party modules).
-- .NET SDK 10 (`dotnet`) for level 1 and the linker gate's inspector. The test projects restore NUnit
+- .NET SDK 10 (`dotnet`) for level 1, its metadata reader (`asmrefs/`) and the linker gate's inspector. The
+  test projects restore NUnit
   3.14.0, NUnit3TestAdapter 4.6.0 and Microsoft.NET.Test.Sdk 17.11.1 from NuGet (or the local NuGet cache).
 - `level2.sh` only: a Unity licence already activated in Unity Hub (Personal is fine), because it starts
   the editor in batchmode.
@@ -41,8 +42,9 @@ git). Give every concurrent run its own output folder.
 
 It needs no licence and never starts the editor. It reads the editor's DLLs, its `netstandard.dll`, the
 uGUI/TextMeshPro sources the editor ships (`BuiltInPackages/com.unity.ugui`), the Test Framework DLLs from
-the editor's project-template cache, and Unity's custom NUnit (`com.unity.ext.nunit`). That is all it
-reads from the editor.
+the editor's project-template cache, Unity's custom NUnit (`com.unity.ext.nunit`), and, for the `deps`
+step, the module list `Resources/modules.asset` and the manifests of the Unity packages the editor ships.
+That is all it reads from the editor.
 
 ### How the projects are generated
 
@@ -106,7 +108,7 @@ packages. It has not been compared against a freshly created 6000.3 project.
 | `readme` | A C# fence in a package `README.md` that declares a type and does not compile (below). |
 | `tests` | A failing test, a test project that does not build, a passed count below the suite's floor, or a suite with no floor. |
 | `meta` | Any `.meta` problem in a package root (below). |
-| `deps` | An asmdef that references an assembly of another family or Unity package that its `package.json` does not declare. Test asmdefs and asmdefs with `defineConstraints` (optional assemblies such as a TMP sub-assembly) are exempt. |
+| `deps` | An asmdef that references an assembly of another family or Unity package that its `package.json` does not declare. Test asmdefs and asmdefs with `defineConstraints` (optional assemblies such as a TMP sub-assembly) are exempt. A compiled assembly that uses an engine module (`com.unity.modules.*`) or a uGUI/TextMeshPro assembly its `package.json` does not guarantee (see [Built-in modules](#built-in-modules-the-deps-step)). |
 
 **How documentation errors are produced.** Documentation diagnostics are compiled as warnings, so the
 assembly is still produced and its dependents still compile. The gate then promotes them to errors and
@@ -128,6 +130,77 @@ reported but do not fail the gate. README snippets are compiled without document
   and it only ever raises.
 - Lower a floor only in a commit that deliberately deletes tests.
 - A suite missing from the file fails the step.
+
+### Built-in modules (the deps step)
+
+Level 2 caught `com.openugd.corelib` using `UnityEngine.AudioListener` without declaring
+`com.unity.modules.audio`. In a project without the Audio module, Unity fails to compile it with CS1069. The
+build step cannot see this, because it references every engine module DLL. So the `deps` step also reads
+what each compiled assembly references in its metadata, and checks that against `package.json`. The reader is
+`asmrefs/`, a small System.Reflection.Metadata tool that the step builds in the output folder. It lists the
+assembly's `AssemblyRef` rows and the types used from each one.
+
+**What is checked.** Every runtime, Editor-only and `Samples~` assembly of the selected packages, in both
+variants. With `deps` in the steps they are compiled even when `build` and `samples` are not.
+- A reference to `UnityEngine.<Name>Module` needs the package that controls the module. Two cases need
+  nothing: a module that every project has, and any use from an Editor-only assembly.
+- A reference to an assembly of a Unity package that level 1 compiles from source needs that package, from
+  Editor-only assemblies too. Today that is `com.unity.ugui`: `UnityEngine.UI`, `UnityEditor.UI`,
+  `Unity.TextMeshPro` and `Unity.TextMeshPro.Editor`. Unity adds `UnityEngine.UI` to every asmdef without
+  `noEngineReferences`, but only in a project that has uGUI. A reference that the asmdef rule above has
+  already reported is not repeated.
+- `UnityEditor.*Module` references never need a declaration.
+- Test asmdefs are exempt, as for asmdef references.
+- An assembly that did not compile cannot be read. It is listed as `NOT CHECKED`. It fails the step only
+  when the `build` step (or `samples`, for a sample) is not part of the run to report it.
+
+**What counts as declared.**
+- A dependency in `package.json`.
+- Anything a declared Unity package depends on, transitively, according to the manifests the editor ships.
+  For example, `com.unity.ugui` brings `com.unity.modules.ui` and `com.unity.modules.imgui`.
+- For an assembly whose `defineConstraints` require a `versionDefines` symbol: that package, because Unity
+  compiles the assembly only when the package is present.
+
+Family dependencies are not walked: declare what you use, as for asmdef references. A finding names the
+family package that would bring the module anyway. A `versionDefines` entry for the package that the
+constraints do not require is accepted with a note. Level 1 compiles with every module present, so it
+cannot see whether the use sits inside the `#if`.
+
+**Where the map comes from.** It is read from the selected editor on every run, so it follows `--unity`.
+- `Contents/Resources/modules.asset` lists every engine module with a `controlledByBuiltinPackage` flag.
+  `0` means that no package controls the module and Unity always references it. `1` means that the module
+  belongs to the built-in package `com.unity.modules.<name in lower case>`. The step checks two things
+  instead of assuming them: that each such package exists in `BuiltInPackages`, and that every
+  `UnityEngine.*Module.dll` has an entry. A mismatch is a tooling problem. Modules that every project has:
+  37 of 73 on 6000.0.41f1, 42 of 81 on 6000.3.3f1.
+- Unity package manifests come from `Contents/Resources/PackageManager/BuiltInPackages/*/package.json`. For a
+  package that is not built in (`com.unity.test-framework` on 6000.0), they come from
+  `Contents/Resources/PackageManager/Editor/<name>-<version>.tgz`. If the editor ships no manifest for a
+  declared Unity package, the step prints a note and does not count the modules that package would bring.
+
+**How the rules were confirmed** (6000.0.41f1). The evidence is Unity's own compiler response files
+(`Library/Bee/artifacts/*/<assembly>.rsp`) from the level-2 smoke project. Its manifest has only uGUI and the
+Test Framework, so its only module packages are ui, imgui and jsonserialize.
+- The runtime asmdefs `com.openugd.corelib` and `UnityEngine.UI` reference exactly the 37 modules flagged
+  `0`, plus UI, IMGUI and JSONSerialize. `UnityEngine.AudioModule.dll` is not among them, and that is the
+  CS1069.
+- The Editor-only asmdefs `com.openugd.corelib.editor`, `com.openugd.corelib.tests` and `UnityEditor.UI`
+  reference all 73 engine modules, Audio included.
+- All of them reference all 43 `UnityEditor.*Module.dll` files, including those whose engine modules are
+  not installed (Physics, Terrain, Video and others). `editor_modules.asset` (6000.0) has no
+  `controlledByBuiltinPackage` field, and 6000.3 ships no such file.
+
+The rules have not been compared against 6000.3.3f1's response files.
+
+**Limits.** The check sees only what the compiler wrote into the assembly. Some uses leave no reference in
+metadata and still fail in Unity: `nameof(AudioListener)`, an inlined `const`, or an overload candidate that
+the compiler had to inspect but did not pick. Level 2 remains the authority. Its smoke project installs no
+module package beyond those uGUI and the Test Framework bring, which is how the AudioListener use was caught.
+
+`tests/fixtures/audio-listener` reproduces the corelib case: a runtime assembly that uses `AudioListener`,
+`Canvas` (covered through `com.unity.ugui`) and `GameObject`, and an Editor-only assembly that uses
+`AudioSource`. `tests/test_modules.py` runs level 1 on a copy of it. The run must fail with exactly one
+finding, and must pass once `com.unity.modules.audio` is added to the copy's `package.json`.
 
 ### The canary
 
@@ -180,7 +253,9 @@ Git-ignored files are not considered.
 
 The script prints one table per step, the deduplicated diagnostics (one line for a diagnostic that both
 variants report), notes and a summary. It also writes:
-- `level1-summary.txt` and `level1-report.json` (machine-readable) into the output folder;
+- `level1-summary.txt` and `level1-report.json` (machine-readable) into the output folder. In the JSON,
+  `deps` holds the asmdef-reference findings and `depsModules` holds the module check: findings, what each
+  package uses and how it is covered, the modules every project has, and assemblies not checked;
 - one build log per project into `logs/`.
 
 Exit status: 0 if every step passed, 1 if the gate failed, 2 if the tools could not run.
@@ -194,6 +269,8 @@ Exit status: 0 if every step passed, 1 if the gate failed, 2 if the tools could 
 - Unity's source generators, which Unity runs as analyzers and level 1 does not.
 - Auto-referenced precompiled DLLs.
 - IL2CPP stripping. That is the linker gate's job.
+- A use of an engine module that leaves no reference in the compiled metadata (see
+  [Built-in modules](#built-in-modules-the-deps-step)).
 
 `harness/run.sh` is kept for callers of the seed harness. It runs `level1.sh --steps build,tests`.
 
@@ -344,5 +421,7 @@ could not run.
 python3 -m unittest discover -s tests
 ```
 
-The tests cover the version and range evaluation, `defineConstraints`, the Unity define ladder, README
+The tests cover the version and range evaluation, `defineConstraints`, the Unity define ladder, the module
+check (its rules on a synthetic editor, the map read from each installed editor, and level 1 on the
+AudioListener fixture, which needs the default editor and the .NET SDK and is skipped without them), README
 fence extraction with the opt-out marker, and the `.meta` check on a throwaway git repository.
