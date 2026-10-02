@@ -1,0 +1,8 @@
+<!-- Roots the probe the way a scene or [RuntimeInitializeOnLoadMethod] would root real game code. -->
+<linker>
+  <assembly fullname="Probe">
+    <type fullname="Probe.Entry">
+      <method name="Run" />
+    </type>
+  </assembly>
+</linker>
