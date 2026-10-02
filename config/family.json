@@ -1,0 +1,18 @@
+{
+  "description": "The OpenUGD package family as the tools see it. 'root' holds one checkout (or worktree) per repo; OPENUGD_ROOT or --root overrides it. 'packages' is the default set for level1/level2, in dependency order. finish.sh fast-forwards 'target' to 'source' in the main checkout that owns each worktree.",
+  "root": "~/workspace/openugd/v2/wt",
+  "smokeProject": "~/workspace/openugd/v2/smoke",
+  "sourceBranch": "feature/v2-exec",
+  "packages": [
+    {"repo": "upm-lifetime", "target": "feature/v2"},
+    {"repo": "upm-signal", "target": "feature/v2"},
+    {"repo": "upm-context", "target": "main"},
+    {"repo": "upm-corelib", "target": "feature/v2"},
+    {"repo": "upm-corelib-widgets", "target": "feature/v2"},
+    {"repo": "upm-ui", "target": "feature/v2"}
+  ],
+  "finishExtra": [
+    {"repo": "host", "target": "main"},
+    {"repo": "upm-dependency-injection", "source": "feature/deprecation-banner", "target": "master"}
+  ]
+}

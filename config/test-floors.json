@@ -1,0 +1,7 @@
+{
+  "_comment": "Minimum passed-test count per test asmdef under level 1 (dotnet test --filter \"TestCategory!=RequiresUnity\"). Floors only go up: raise one in the commit that adds tests (level1.sh --raise-floors does it), and lower one only in a commit that deliberately deletes tests, saying why. Recorded 2026-10-02 from the feature/v2-exec worktrees.",
+  "com.openugd.context.tests": 149,
+  "com.openugd.corelib.tests": 66,
+  "com.openugd.lifetime.tests": 85,
+  "com.openugd.signal.tests": 55
+}

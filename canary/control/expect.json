@@ -1,0 +1,4 @@
+{
+  "expect": "pass",
+  "why": "the transitive canary's source with com.openugd.lifetime declared: proves the transitive canary fails for the missing reference and not for a broken source file."
+}

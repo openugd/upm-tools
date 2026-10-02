@@ -1,0 +1,4 @@
+{
+  "expect": "pass",
+  "why": "declares no references, yet Unity gives every asmdef without noEngineReferences UnityEngine.UI; if this fails, the harness lost that rule and corelib/widgets would report false CS0246 errors."
+}

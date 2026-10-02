@@ -1,0 +1,7 @@
+{
+    "name": "upm-tools.canary.transitive",
+    "references": [
+        "com.openugd.signal"
+    ],
+    "noEngineReferences": true
+}

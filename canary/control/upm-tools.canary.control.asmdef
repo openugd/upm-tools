@@ -1,0 +1,8 @@
+{
+    "name": "upm-tools.canary.control",
+    "references": [
+        "com.openugd.signal",
+        "com.openugd.lifetime"
+    ],
+    "noEngineReferences": true
+}
