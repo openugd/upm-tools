@@ -47,8 +47,8 @@ reads from the editor.
 ### How the projects are generated
 
 The gate generates one SDK-style project per (asmdef, variant) and builds them in dependency order, with
-independent projects in parallel. It copies Unity's rules. Each rule below exists because leaving it out
-gave a wrong result in an earlier harness:
+independent projects in parallel. It copies Unity's rules. The first two exist because leaving them out
+gave wrong results in an earlier harness:
 
 - **Declared references only.** Every project sets `DisableTransitiveProjectReferences`. Without it,
   widgets once "compiled" because it saw context through DI.
@@ -75,9 +75,9 @@ gave a wrong result in an earlier harness:
 
 Unity evaluates `versionDefines` against the packages installed in the project. Level 1 evaluates them
 against a package-version map, `config/unity/<editor version>.json`.
-- The default map, `6000.0.41f1.json`, lists the packages of a new 6000.0.41f1 project (3D template
-  manifest): `com.unity.ugui` 2.0.0, `com.unity.test-framework` 1.4.6, `com.unity.ext.nunit` 2.0.5 and the
-  `com.unity.modules.*` set.
+- The default map, `6000.0.41f1.json`, lists the Unity packages the OpenUGD host project resolves on
+  6000.0.41f1 (its `Packages/manifest.json` and `packages-lock.json`): `com.unity.ugui` 2.0.0,
+  `com.unity.test-framework` 1.4.6, `com.unity.ext.nunit` 2.0.5 and its `com.unity.modules.*` set.
 - The editor itself is entered under the name `Unity`.
 - The family's own `package.json` versions are added at run time.
 
@@ -116,7 +116,8 @@ reported but do not fail the gate. README snippets are compiled without document
 
 **Test asmdefs** are compiled twice:
 - **Faithfully**, as above: netstandard2.1 against Unity's NUnit 3.5 and the Test Framework DLLs, with
-  declared references only. This catches tests that use APIs Unity's runtime or NUnit lacks.
+  declared references only. This catches tests that use APIs missing from Unity's .NET Standard 2.1
+  profile or from Unity's NUnit.
 - **As a net10.0 test project** for `dotnet test --filter "TestCategory!=RequiresUnity"`. A test that
   needs the real engine (GameObject, AssetDatabase, MonoBehaviour, anything that calls into native code)
   must carry `[Category("RequiresUnity")]`. Level 1 skips it and level 2 runs it. CoreCLR is not Mono, so
@@ -266,8 +267,9 @@ For each editor the script:
      included, and lists all of them under `testables`;
    - `com.unity.test-framework` and `com.unity.ugui` take the versions from the editor's package map;
    - `ProjectVersion.txt` is written for the editor;
-   - each package's `Samples~` entries are copied to `Assets/Samples/<package>/<version>/<sample>`, as the
-     Package Manager's Import button does;
+   - each sample listed in a package's `package.json` is copied from `Samples~` to
+     `Assets/Samples/<package display name>/<version>/<sample display name>`, as the Package Manager's
+     Import button does;
    - the template's `ProjectSettings` holds only `EditorSettings.asset` (text serialization); Unity
      generates everything else with defaults.
 2. Runs the editor in batchmode three times: an import (`-quit`), then `-runTests -testPlatform EditMode`
@@ -283,8 +285,8 @@ For each editor the script:
    - Library size and free disk.
 
 The script refuses to run if:
-- the smoke project is held by another Unity process (`Temp/UnityLockfile`, checked with `lsof`, plus
-  any `Unity -projectPath <smoke>` process);
+- the smoke project is in use: a process holds `Temp/UnityLockfile` (checked with `lsof`), or a
+  `Unity -projectPath <smoke>` process is running;
 - the smoke project sits inside a git work tree;
 - less than 3 GB of disk is free.
 

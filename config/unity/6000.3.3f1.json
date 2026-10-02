@@ -1,5 +1,5 @@
 {
-  "description": "Package versions for Unity 6000.3.3f1: ugui, test-framework and ext.nunit as built into that editor (BuiltInPackages), modules as in the 6000.0 template. Not verified against a freshly created 6000.3 project.",
+  "description": "Package versions for Unity 6000.3.3f1: ugui, test-framework and ext.nunit as built into that editor (BuiltInPackages), modules copied from the 6000.0.41f1 map. Not compared against a freshly created 6000.3 project.",
   "unity": "6000.3.3f1",
   "packages": {
     "com.unity.ugui": "2.0.0",
