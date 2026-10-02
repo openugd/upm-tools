@@ -4,15 +4,50 @@
   "smokeProject": "~/workspace/openugd/v2/smoke",
   "sourceBranch": "feature/v2-exec",
   "packages": [
-    {"repo": "upm-lifetime", "target": "feature/v2"},
-    {"repo": "upm-signal", "target": "feature/v2"},
-    {"repo": "upm-context", "target": "main"},
-    {"repo": "upm-corelib", "target": "feature/v2"},
-    {"repo": "upm-corelib-widgets", "target": "feature/v2"},
-    {"repo": "upm-ui", "target": "feature/v2"}
+    {
+      "repo": "upm-lifetime",
+      "target": "feature/v2"
+    },
+    {
+      "repo": "upm-signal",
+      "target": "feature/v2"
+    },
+    {
+      "repo": "upm-context",
+      "target": "main"
+    },
+    {
+      "repo": "upm-corelib",
+      "target": "feature/v2"
+    },
+    {
+      "repo": "upm-corelib-widgets",
+      "target": "feature/v2"
+    },
+    {
+      "repo": "upm-ui",
+      "target": "feature/v2"
+    }
   ],
   "finishExtra": [
-    {"repo": "host", "target": "main"},
-    {"repo": "upm-dependency-injection", "source": "feature/deprecation-banner", "target": "master"}
+    {
+      "repo": "host",
+      "target": "main"
+    }
+  ],
+  "held": [
+    {
+      "repo": "upm-dependency-injection",
+      "branch": "feature/deprecation-banner",
+      "target": "master",
+      "reason": "Merge only after com.openugd.context 2.0.0 is live on OpenUPM, so the banner never links to a 404 (DECISIONS-v2, decision 3). finish.sh never touches it."
+    }
+  ],
+  "outsideTrain": [
+    {
+      "repo": "upm-configuration",
+      "branch": "main",
+      "note": "com.openugd.configuration 0.x: checked by level 1 when listed with --packages; not part of the 2.0 release and has no main checkout yet."
+    }
   ]
 }

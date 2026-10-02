@@ -73,8 +73,10 @@ def restore(solution, log_path):
 
 
 def _build_one(node, log_dir):
-    code, out = run(['dotnet', 'build', node.csproj, '--no-restore', '-nologo', '-v', 'q', '-clp:NoSummary',
-                     '-p:BuildProjectReferences=false', '-nodeReuse:false'], timeout=900)
+    # --no-incremental: a no-op incremental build re-emits no warnings, so documentation errors (which are
+    # warnings promoted by this gate) would silently pass on a rerun into the same output folder.
+    code, out = run(['dotnet', 'build', node.csproj, '--no-restore', '--no-incremental', '-nologo', '-v', 'q',
+                     '-clp:NoSummary', '-p:BuildProjectReferences=false', '-nodeReuse:false'], timeout=900)
     node.log = os.path.join(log_dir, node.id.replace('/', '__') + '.log')
     with open(node.log, 'w') as f:
         f.write(out)

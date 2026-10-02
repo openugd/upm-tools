@@ -40,6 +40,11 @@ def entries():
     return out
 
 
+def held():
+    """Branches finish.sh must never land; it only prints why."""
+    return family_config().get('held', [])
+
+
 def main_checkout(worktree):
     code, common = git(worktree, 'rev-parse', '--git-common-dir')
     if code != 0:
@@ -127,6 +132,8 @@ def main(argv):
             code, out = git(r['main'], 'merge', '--ff-only', r['source'])
             print('%s: %s' % (r['repo'], 'merged' if code == 0 else 'merge refused:\n' + out))
             failed = failed or code != 0
+    for h in held():
+        print('\nHELD, never merged by this script: %s %s -> %s\n    %s' % (h['repo'], h['branch'], h['target'], h['reason']))
     print('\nPush later, yourself (this script never pushes):')
     for r in results:
         if not r['main'] or not r['ahead']:

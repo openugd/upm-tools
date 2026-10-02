@@ -387,8 +387,10 @@ Exit status: 0 pass, 1 the gate failed, 2 the editor could not run (lock, licenc
 
 The script reads the repos from `config/family.json`:
 - `packages[].target`: `feature/v2`, or `main` for `upm-context`;
-- `finishExtra`: the host project (`main`) and `upm-dependency-injection`, which lands
-  `feature/deprecation-banner` on `master`.
+- `finishExtra`: the host project (`main`);
+- `held`: branches the script never merges, only reports — `upm-dependency-injection`'s
+  `feature/deprecation-banner` lands on `master` by hand, after `com.openugd.context` 2.0.0 is live on OpenUPM;
+- `outsideTrain`: repos checked by level 1 on request but not part of the 2.0 release (`upm-configuration`).
 
 It finds each main checkout through the worktree's `git rev-parse --git-common-dir` and prints, per repo:
 - the commits a fast-forward would bring and the diffstat;

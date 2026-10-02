@@ -1,7 +1,8 @@
 {
-  "_comment": "Minimum passed-test count per test asmdef under level 1 (dotnet test --filter \"TestCategory!=RequiresUnity\"). Floors only go up: raise one in the commit that adds tests (level1.sh --raise-floors does it), and lower one only in a commit that deliberately deletes tests, saying why. Recorded 2026-10-02 from the feature/v2-exec worktrees.",
-  "com.openugd.context.tests": 149,
-  "com.openugd.corelib.tests": 66,
+  "_comment": "Minimum passed-test count per test asmdef under level 1 (dotnet test --filter \"TestCategory!=RequiresUnity\"). Floors only go up: raise one in the commit that adds tests (level1.sh --raise-floors does it), and lower one only in a commit that deliberately deletes tests, saying why. Recorded 2026-10-02 from the feature/v2-exec worktrees. 2026-10-02 phase B: context 149->133 (15 configuration tests moved to com.openugd.configuration, 1 IContextInitializer test deleted); corelib 66->46 (20 TransformProvider tests left with the UI services on park/ui-services); configuration 18 added.",
+  "com.openugd.context.tests": 133,
+  "com.openugd.corelib.tests": 46,
   "com.openugd.lifetime.tests": 85,
-  "com.openugd.signal.tests": 55
+  "com.openugd.signal.tests": 55,
+  "com.openugd.configuration.tests": 18
 }
