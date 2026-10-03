@@ -1,8 +1,8 @@
 {
-  "description": "The OpenUGD package family as the tools see it. 'root' holds one checkout (or worktree) per repo; OPENUGD_ROOT or --root overrides it. 'packages' is the default set for level1/level2, in dependency order. finish.sh fast-forwards 'target' to 'source' in the main checkout that owns each worktree.",
-  "root": "~/workspace/openugd/OpenUGD/Assets",
-  "smokeProject": "~/workspace/openugd/v2/smoke",
-  "il2cppSmokeProject": "~/workspace/openugd/v2/il2cpp-smoke",
+  "description": "The OpenUGD package family as the tools see it. 'root' holds one checkout (or worktree) per repo; OPENUGD_ROOT or --root overrides it. Relative paths here ('root', 'smokeProject', 'il2cppSmokeProject') are relative to the upm-tools folder; the defaults assume the author's layout, with upm-tools in <workspace>/v2/repos/ and the packages in <workspace>/OpenUGD/Assets. 'packages' is the default set for level1/level2, in dependency order. finish.sh fast-forwards 'target' to 'source' in the main checkout that owns each worktree.",
+  "root": "../../../OpenUGD/Assets",
+  "smokeProject": "../../smoke",
+  "il2cppSmokeProject": "../../il2cpp-smoke",
   "sourceBranch": "feature/v2-exec",
   "release": {
     "description": "release-check.sh: the version the train is tagged as (each tag equals package.json 'version', no prefix, as the existing tags are) and the 'unity' minimum every package declares (DECISIONS-v2: minimum Unity 6000.0).",

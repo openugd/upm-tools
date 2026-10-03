@@ -32,10 +32,23 @@ Every script prints its options with `--help`. None of them pushes, tags, adds a
 - `il2cpp-smoke.sh` only: the same licence, the editor's WebGL module (`PlaybackEngines/WebGLSupport`), and Google
   Chrome (or Chromium/Edge) for the headless check; without a browser, `--no-check` builds and serves only.
 
-The package checkouts are found under `config/family.json` → `root`
-(`~/workspace/openugd/v2/wt`), one folder per repo (`upm-lifetime`, `upm-signal`,
-`upm-context`, `upm-corelib`, `upm-corelib-widgets`, `upm-ui`). Override it with `--root` or
-`OPENUGD_ROOT`. Build output goes to `--out`, else `$OPENUGD_HARNESS_OUT`, else `./out` (ignored by
+The package checkouts are found under `config/family.json` → `root`, one folder per repo (`upm-lifetime`,
+`upm-signal`, `upm-context`, `upm-corelib`, `upm-corelib-widgets`, `upm-ui`). Override it with `--root` or
+`OPENUGD_ROOT` (relative to the current directory).
+
+Paths in `config/family.json` (`root`, `smokeProject`, `il2cppSmokeProject`) may be absolute, start with `~`, or
+be relative; a relative one is resolved against the upm-tools folder, not the current directory, so the scripts
+behave the same from anywhere. The committed defaults assume the author's layout:
+
+```
+<workspace>/
+  OpenUGD/Assets/upm-*     root: ../../../OpenUGD/Assets
+  v2/repos/upm-tools/      this repository
+  v2/smoke/                smokeProject: ../../smoke
+  v2/il2cpp-smoke/         il2cppSmokeProject: ../../il2cpp-smoke
+```
+
+With another layout, edit those three values or pass `--root`, `--smoke` and `--project`. Build output goes to `--out`, else `$OPENUGD_HARNESS_OUT`, else `./out` (ignored by
 git). Give every concurrent run its own output folder.
 
 ## level1.sh: the per-commit gate
@@ -366,8 +379,8 @@ Exit status: 0 pass, 1 fail, 2 the tools could not run.
 ```
 
 For each editor the script:
-1. Creates or refreshes the smoke project, by default `~/workspace/openugd/v2/smoke`,
-   from `smoke-template/`:
+1. Creates or refreshes the smoke project (`--smoke`, else `config/family.json` → `smokeProject`) from
+   `smoke-template/`:
    - `Packages/manifest.json` gets a `file:` reference to each selected checkout, its family dependencies
      included, and lists all of them under `testables`;
    - `com.unity.test-framework` and `com.unity.ugui` take the versions from the editor's package map;
@@ -462,8 +475,7 @@ installed here has no Mac IL2CPP module, so the player is WebGL, which is always
 
 1. **Project.** It packs each family package from its checkout's HEAD the way OpenUPM publishes a tag (`lib/pack.py`,
    as `level2.sh --tarball` does) into `<project>/Tarballs`. It then creates or refreshes the throwaway project,
-   by default `~/workspace/openugd/v2/il2cpp-smoke` (`config/family.json` →
-   `il2cppSmokeProject`), from `il2cpp-template/`:
+   `--project`, else `config/family.json` → `il2cppSmokeProject`, from `il2cpp-template/`:
    - `Packages/manifest.json` lists `com.unity.ugui` (version from the editor's package map) and a
      `file:../Tarballs/<name>-<version>.tgz` reference per family package. All six are installed by default, so
      widgets and ui are compiled into the player too;

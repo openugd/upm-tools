@@ -2,7 +2,7 @@
 """Level 2: the real-Unity gate, run on the author's machine with the licence already activated in Unity Hub.
 
 For each editor (default 6000.0.41f1):
-  1. create or refresh the smoke project (default ~/workspace/openugd/v2/smoke) from
+  1. create or refresh the smoke project (default: config/family.json "smokeProject") from
      smoke-template/: Packages/manifest.json gets a "file:" reference to each selected package and lists every
      one of them under "testables"; Samples~ folders are copied into Assets/Samples the way the Package
      Manager's Import button does. By default the reference is the package checkout itself (mutable: Unity writes
@@ -36,8 +36,8 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import (CONFIG, TOOLS, dir_size, family_config, family_root, free_disk, human_size,  # noqa: E402
-                    load_json, selected_repos, table)
+from common import (CONFIG, TOOLS, config_path, dir_size, family_config, family_root, free_disk,  # noqa: E402
+                    human_size, load_json, selected_repos, table)
 from unity import DEFAULT_EDITOR, UnityInstall  # noqa: E402
 import pack as P  # noqa: E402
 
@@ -477,7 +477,7 @@ def report(results, repos, smoke, packed=None):
 def main(argv):
     a = parse_args(argv)
     root = family_root(a.root)
-    smoke = os.path.abspath(a.smoke or family_config()['smokeProject'])
+    smoke = os.path.abspath(os.path.expanduser(a.smoke)) if a.smoke else config_path(family_config()['smokeProject'])
     repos, added = family_closure(root, selected_repos(a.packages))
     print('LEVEL 2  smoke %s  root %s' % (smoke, root))
     print('         packages %s%s' % (', '.join(repos), ('  (added as dependencies: %s)' % ', '.join(added))

@@ -6,7 +6,7 @@ IL2CPP player - WebGL, the IL2CPP target every editor install here has (WebGL is
 and the stripped player's runtime are exercised too:
 
   1. pack each family package from its checkout's HEAD the way OpenUPM publishes a tag (lib/pack.py) and create or
-     refresh the throwaway project (default ~/workspace/openugd/v2/il2cpp-smoke, outside every git
+     refresh the throwaway project (default: config/family.json "il2cppSmokeProject", which must be outside every git
      repository) from il2cpp-template/: the family tarballs plus com.unity.ugui, the Boot scripts, the build script
      and a .jslib that copies the player's summary into the page title;
   2. build it in batchmode through -executeMethod Il2CppSmoke.Editor.SmokeBuild.Run: WebGL, release, Managed Stripping
@@ -43,15 +43,15 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import CONFIG, TOOLS, dir_size, family_config, family_root, free_disk, human_size, load_json, \
-    selected_repos, table  # noqa: E402
+from common import CONFIG, TOOLS, config_path, dir_size, family_config, family_root, free_disk, human_size, \
+    load_json, selected_repos, table  # noqa: E402
 from unity import DEFAULT_EDITOR, UnityInstall  # noqa: E402
 import headless  # noqa: E402
 import level2 as L2  # noqa: E402
 import pack as P  # noqa: E402
 
 TEMPLATE = os.path.join(TOOLS, 'il2cpp-template')
-DEFAULT_PROJECT = '~/workspace/openugd/v2/il2cpp-smoke'
+DEFAULT_PROJECT = '../il2cpp-smoke'   # relative to the tools folder, like every path in config/family.json
 STATE = '.upm-tools.json'
 TARBALLS = 'Tarballs'
 BUILD_DIR = os.path.join('Build', 'WebGL')
@@ -93,7 +93,8 @@ def parse_args(argv):
     ap.add_argument('--stripping', default='medium', choices=sorted(LEVELS),
                     help='Managed Stripping Level of the player (default: medium)')
     ap.add_argument('--project', help='the throwaway project (default: config/family.json "il2cppSmokeProject", '
-                                      'else %s); must be outside every git work tree' % DEFAULT_PROJECT)
+                                      'else il2cpp-smoke next to the upm-tools folder); must be outside every git '
+                                      'work tree')
     ap.add_argument('--root', help='folder holding one checkout per package repo (default: $OPENUGD_ROOT or '
                                    'config/family.json "root")')
     ap.add_argument('--packages', help='comma-separated repo folders to install (default: all six family packages); '
@@ -124,7 +125,9 @@ def parse_args(argv):
 
 
 def project_path(arg=None):
-    return os.path.abspath(arg or family_config().get('il2cppSmokeProject') or DEFAULT_PROJECT)
+    if arg:
+        return os.path.abspath(os.path.expanduser(arg))
+    return config_path(family_config().get('il2cppSmokeProject') or DEFAULT_PROJECT)
 
 
 # --- project ------------------------------------------------------------------------------------------------------

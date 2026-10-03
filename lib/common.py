@@ -17,8 +17,16 @@ def family_config():
     return load_json(os.path.join(CONFIG, 'family.json'))
 
 
+def config_path(value):
+    """A path from config/family.json: '~' expands, and a relative path is relative to the tools folder (the
+    folder that holds config/), not to the current directory, so the defaults work from anywhere."""
+    return os.path.abspath(os.path.join(TOOLS, os.path.expanduser(value)))
+
+
 def family_root(arg=None):
-    return os.path.abspath(arg or os.environ.get('OPENUGD_ROOT') or family_config()['root'])
+    """--root, else $OPENUGD_ROOT (both relative to the current directory), else config/family.json 'root'."""
+    arg = arg or os.environ.get('OPENUGD_ROOT')
+    return os.path.abspath(os.path.expanduser(arg)) if arg else config_path(family_config()['root'])
 
 
 def selected_repos(arg):
