@@ -3,20 +3,25 @@
 
 For each editor (default 6000.0.41f1):
   1. create or refresh the smoke project (default ~/workspace/openugd/v2/smoke) from
-     smoke-template/: Packages/manifest.json gets a "file:" reference to each selected package checkout
-     and lists every one of them under "testables"; Samples~ folders are copied into Assets/Samples the way
-     the Package Manager's Import button does;
-  2. run the editor in batchmode to import the project (Unity writes any missing .meta file next to the
-     asset in the package checkout, because "file:" packages are mutable), then once more for EditMode
-     and once more for PlayMode tests (-runTests -testResults);
+     smoke-template/: Packages/manifest.json gets a "file:" reference to each selected package and lists every
+     one of them under "testables"; Samples~ folders are copied into Assets/Samples the way the Package
+     Manager's Import button does. By default the reference is the package checkout itself (mutable: Unity writes
+     any missing .meta file next to the asset in the checkout). With --tarball, each package's HEAD is packed the
+     way OpenUPM publishes a tag (git archive of the commit, then npm pack) into <smoke>/Tarballs, the manifest
+     points at the .tgz files (immutable, as a registry install is), and samples are copied out of the tarballs;
+  2. run the editor in batchmode to import the project, then once more for EditMode and once more for PlayMode
+     tests (-runTests -testResults);
   3. report the tests run, passed and failed per test assembly (NUnit XML), the compile errors and
-     warnings and every "has no meta file" message in the editor logs, the untracked .meta files in each
-     package checkout (git status) - marking those this run created - and any tracked file the import
-     changed.
+     warnings and every "has no meta file" message in the editor logs (with --tarball this is the immutable-folder
+     message a registry user would see), the samples imported, and - for checkout installs - the untracked .meta
+     files in each package checkout (git status), marking those this run created, and any tracked file the
+     import changed.
 
+--no-editor prepares the smoke project (and packs the tarballs) without starting Unity.
 Safety: refuses to run when the smoke project is open in another Unity process (Temp/UnityLockfile held)
 or sits inside a git work tree; never builds a player; prints Library size and free disk.
-Exit status: 0 everything passed, 1 the gate failed, 2 the editor could not run (lock, licence, timeout).
+Exit status: 0 everything passed, 1 the gate failed, 2 the editor could not run (lock, licence, timeout) or a
+package could not be packed.
 """
 import argparse
 import datetime
@@ -34,9 +39,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (CONFIG, TOOLS, dir_size, family_config, family_root, free_disk, human_size,  # noqa: E402
                     load_json, selected_repos, table)
 from unity import DEFAULT_EDITOR, UnityInstall  # noqa: E402
+import pack as P  # noqa: E402
 
 TEMPLATE = os.path.join(TOOLS, 'smoke-template')
 STATE = '.upm-tools.json'
+TARBALLS = 'Tarballs'      # under the smoke project, next to Assets/ and Packages/; Unity does not import it
 COMPILE_RE = re.compile(r'^(?P<file>[^\n]*?\.cs)\((?P<line>\d+),(?P<col>\d+)\): (?P<sev>error|warning) '
                         r'(?P<code>CS\d+): (?P<msg>.*)$')
 NO_META_RE = re.compile(r'has no meta file')
@@ -63,6 +70,14 @@ def parse_args(argv):
                                                   '"smokeProject")')
     ap.add_argument('--tests', default='editmode,playmode', help='editmode, playmode, both (default) or none')
     ap.add_argument('--no-samples', action='store_true', help='do not copy Samples~ into Assets/Samples')
+    ap.add_argument('--tarball', action='store_true',
+                    help='install each package from a .tgz of its HEAD, packed as OpenUPM packs a tag (git archive '
+                         'of the commit, then npm pack), instead of from the checkout; uncommitted changes are not '
+                         'in it')
+    ap.add_argument('--no-npm', action='store_true', help='with --tarball: write the tarball from the git '
+                                                          'export without npm (npm\'s ignore rules not applied)')
+    ap.add_argument('--no-editor', action='store_true', help='prepare the smoke project (and the tarballs) and stop '
+                                                             'without starting Unity')
     ap.add_argument('--graphics', action='store_true', help='run without -nographics')
     ap.add_argument('--clean', action='store_true', help='delete the smoke project\'s Library first')
     ap.add_argument('--delete-library', action='store_true', help='delete Library afterwards to free disk')
@@ -123,7 +138,7 @@ def family_closure(root, repos):
     return out, added
 
 
-def refresh_project(a, smoke, root, repos, unity):
+def refresh_project(a, smoke, root, repos, unity, packed=None):
     os.makedirs(smoke, exist_ok=True)
     state_path = os.path.join(smoke, STATE)
     state = load_json(state_path) if os.path.exists(state_path) else {}
@@ -147,8 +162,15 @@ def refresh_project(a, smoke, root, repos, unity):
     packages = []
     for repo in repos:
         path = os.path.join(root, repo)
-        pj = load_json(os.path.join(path, 'package.json'))
-        manifest['dependencies'][pj['name']] = 'file:' + path
+        if packed:
+            info = packed[repo]
+            pj = {'name': info['name'], 'version': info['version'], 'displayName': info['displayName'],
+                  'samples': info['samples']}
+            # Relative to Packages/, so the manifest does not depend on where the smoke project lives.
+            manifest['dependencies'][pj['name']] = 'file:../%s/%s' % (TARBALLS, os.path.basename(info['tgz']))
+        else:
+            pj = load_json(os.path.join(path, 'package.json'))
+            manifest['dependencies'][pj['name']] = 'file:' + path
         packages.append((repo, pj))
     manifest['testables'] = sorted(set(manifest.get('testables', [])) | {pj['name'] for _, pj in packages})
     with open(os.path.join(smoke, 'Packages', 'manifest.json'), 'w') as f:
@@ -170,14 +192,22 @@ def refresh_project(a, smoke, root, repos, unity):
     if not a.no_samples:
         for repo, pj in packages:
             for s in pj.get('samples') or []:
-                src = os.path.join(root, repo, s['path'])
-                if not os.path.isdir(src):
-                    copied.append((repo, s.get('displayName', s['path']), 'MISSING: %s' % s['path']))
-                    continue
+                label = s.get('displayName', s['path'])
                 dst = os.path.join(samples_root, pj.get('displayName', pj['name']), pj['version'],
                                    s.get('displayName', os.path.basename(s['path'])))
+                if packed:
+                    files, no_meta = P.extract_sample(packed[repo]['tgz'], s['path'], dst)
+                    if not files:
+                        copied.append((repo, label, 'MISSING in the tarball: %s' % s['path'], []))
+                        continue
+                    copied.append((repo, label, os.path.relpath(dst, smoke), no_meta))
+                    continue
+                src = os.path.join(root, repo, s['path'])
+                if not os.path.isdir(src):
+                    copied.append((repo, label, 'MISSING: %s' % s['path'], []))
+                    continue
                 shutil.copytree(src, dst)
-                copied.append((repo, s.get('displayName', s['path']), os.path.relpath(dst, smoke)))
+                copied.append((repo, label, os.path.relpath(dst, smoke), []))
     state['editor'] = unity.version
     state['refreshed'] = datetime.datetime.now().isoformat(timespec='seconds')
     with open(state_path, 'w') as f:
@@ -262,18 +292,22 @@ def parse_results(path):
             'failed': int(root.get('failed', 0)), 'suites': suites}
 
 
-def gate_editor(a, smoke, root, repos, spec):
+def gate_editor(a, smoke, root, repos, spec, packed=None):
     unity = UnityInstall(spec)
     print('\n== Unity %s' % unity.version)
-    res = {'editor': unity.version, 'runs': {}, 'ok': True, 'tooling': []}
-    if not os.path.exists(unity.executable):
+    res = {'editor': unity.version, 'runs': {}, 'ok': True, 'tooling': [], 'tarball': bool(packed)}
+    if not os.path.exists(unity.executable) and not a.no_editor:
         res['tooling'].append('editor executable missing: %s' % unity.executable)
         res['ok'] = False
         return res
-    manifest, copied = refresh_project(a, smoke, root, repos, unity)
+    manifest, copied = refresh_project(a, smoke, root, repos, unity, packed)
     res['samples'] = copied
     print('  manifest: %s' % ', '.join('%s=%s' % kv for kv in manifest['dependencies'].items()))
-    before = {r: git_state(os.path.join(root, r)) for r in repos}
+    if a.no_editor:
+        res['no_editor'] = True
+        return res
+    # A tarball is immutable: Unity cannot write into the checkouts, which other work may be changing meanwhile.
+    before = None if packed else {r: git_state(os.path.join(root, r)) for r in repos}
     logs = os.path.join(smoke, 'Logs', 'upm-tools')
     os.makedirs(logs, exist_ok=True)
     stamp = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
@@ -300,13 +334,14 @@ def gate_editor(a, smoke, root, repos, spec):
         if name == 'import' and scan['errors']:
             res['skipped_tests'] = 'not run: the import reported compile errors'
             break
-    after = {r: git_state(os.path.join(root, r)) for r in repos}
     res['git'] = {}
-    for r in repos:
-        u0, c0 = before[r]
-        u1, c1 = after[r]
-        res['git'][r] = {'untracked_meta': sorted(u1), 'new_untracked_meta': sorted(u1 - u0),
-                         'changed_by_run': sorted(c1 - c0)}
+    if before is not None:
+        after = {r: git_state(os.path.join(root, r)) for r in repos}
+        for r in repos:
+            u0, c0 = before[r]
+            u1, c1 = after[r]
+            res['git'][r] = {'untracked_meta': sorted(u1), 'new_untracked_meta': sorted(u1 - u0),
+                             'changed_by_run': sorted(c1 - c0)}
     lib = os.path.join(smoke, 'Library')
     res['library_bytes'] = dir_size(lib) if os.path.isdir(lib) else 0
     if a.delete_library and os.path.isdir(lib):
@@ -315,19 +350,52 @@ def gate_editor(a, smoke, root, repos, spec):
     return res
 
 
-def report(results, repos, smoke):
+def report_packing(packed, repos):
+    """What each tarball holds, against the commit it was packed from. Returns False on a packing problem."""
     ok = True
+    print('\n== Tarballs (packed from HEAD of each checkout)')
+    rows = []
+    for r in repos:
+        p = packed[r]
+        rows.append([r, '%s %s' % (p['name'], p['version']), p['sha'][:10], len(p['files']), human_size(p['size']),
+                     len(p['dropped']), 'yes' if p['dirty'] else 'no', os.path.basename(p['tgz'])])
+    print(table(rows, ['repo', 'package', 'commit', 'files', 'size', 'tracked, not packed',
+                       'uncommitted changes', 'tarball']))
+    print('  method: %s' % ', '.join(sorted({packed[r]['method'] for r in repos})))
+    for r in repos:
+        p = packed[r]
+        for f in p['dropped'][:40]:
+            print('  NOT PACKED  %-22s %s   <- tracked by git, left out by npm\'s ignore rules' % (r, f))
+            ok = False
+        for f in p['extra'][:40]:
+            print('  EXTRA       %-22s %s   <- in the tarball but not in the commit' % (r, f))
+            ok = False
+        if p['dirty']:
+            print('  note        %-22s %d uncommitted change(s) are not in the tarball' % (r, len(p['dirty'])))
+        for n in p['notes']:
+            print('  note        %-22s %s' % (r, n))
+    return ok
+
+
+def report(results, repos, smoke, packed=None):
+    ok = True
+    if packed:
+        ok = report_packing(packed, repos)
     for res in results:
-        print('\n== Report: Unity %s' % res['editor'])
+        print('\n== Report: Unity %s%s' % (res['editor'], '  (packages installed from tarballs)'
+                                          if res.get('tarball') else ''))
         for t in res['tooling']:
             print('  TOOLING: %s' % t)
+        if res.get('no_editor'):
+            print('  --no-editor: the smoke project is prepared; Unity was not started')
         rows = []
         for name, run in res['runs'].items():
             s = run['scan']
             rows.append([name, run['exit'], '%d s' % run['seconds'], len(s['errors']), len(s['warnings']),
                          len(s['no_meta']), len(s['orphan_meta']), os.path.relpath(run['log'], smoke)])
-        print(table(rows, ['run', 'exit', 'time', 'compile errors', 'warnings', 'no-meta msgs',
-                           'orphan-meta msgs', 'log (in smoke project)']))
+        if rows:
+            print(table(rows, ['run', 'exit', 'time', 'compile errors', 'warnings', 'no-meta msgs',
+                               'orphan-meta msgs', 'log (in smoke project)']))
         suites = []
         if res.get('skipped_tests'):
             print('  tests %s' % res['skipped_tests'])
@@ -371,25 +439,36 @@ def report(results, repos, smoke):
                     print('    ' + x)
         if res.get('samples'):
             print('\n  samples imported into Assets/Samples: %d (%s)' % (
-                len(res['samples']), ', '.join('%s/%s' % (r, n) for r, n, _ in res['samples'])))
-            for r, n, where in res['samples']:
+                len(res['samples']), ', '.join('%s/%s' % (r, n) for r, n, _, _ in res['samples'])))
+            for r, n, where, sample_no_meta in res['samples']:
                 if where.startswith('MISSING'):
                     print('    %s %s: %s' % (r, n, where))
                     ok = False
-        print('\n  untracked .meta files per package checkout (git status):')
-        for r in repos:
-            g = res['git'][r]
-            if not g['untracked_meta']:
-                print('    %-22s none' % r)
-            for m in g['untracked_meta']:
-                print('    %-22s %s%s' % (r, m, '   <- created by this run' if m in g['new_untracked_meta'] else ''))
-            for code, path in g['changed_by_run']:
-                print('    %-22s %s %s   <- tracked file changed during this run' % (r, code, path))
-        print('\n  Library: %s; free disk: %s' % (human_size(res.get('library_bytes', 0)),
-                                                 human_size(free_disk(smoke))) +
-              ('  (Library deleted)' if res.get('library_deleted') else ''))
+                if sample_no_meta:
+                    # Not an error in Assets/, but the asset gets a new GUID on every import.
+                    print('    note: %s %s has %d asset(s) without a .meta (new GUIDs on every import): %s' % (
+                        r, n, len(sample_no_meta), ', '.join(sample_no_meta[:8]) +
+                        (' ...' if len(sample_no_meta) > 8 else '')))
+        if res.get('git'):
+            print('\n  untracked .meta files per package checkout (git status):')
+            for r in repos:
+                g = res['git'][r]
+                if not g['untracked_meta']:
+                    print('    %-22s none' % r)
+                for m in g['untracked_meta']:
+                    print('    %-22s %s%s' % (r, m, '   <- created by this run' if m in g['new_untracked_meta']
+                                              else ''))
+                for code, path in g['changed_by_run']:
+                    print('    %-22s %s %s   <- tracked file changed during this run' % (r, code, path))
+        elif res.get('tarball') and res['runs']:
+            print('\n  package checkouts: not inspected (tarballs are immutable; Unity cannot write into them)')
+        if res['runs']:
+            print('\n  Library: %s; free disk: %s' % (human_size(res.get('library_bytes', 0)),
+                                                     human_size(free_disk(smoke))) +
+                  ('  (Library deleted)' if res.get('library_deleted') else ''))
+        git = res.get('git') or {}
         if res['tooling'] or all_errors or no_meta or orphan or \
-                any(res['git'][r]['untracked_meta'] or res['git'][r]['changed_by_run'] for r in repos):
+                any(git[r]['untracked_meta'] or git[r]['changed_by_run'] for r in git):
             ok = False
         res['ok'] = ok
     return ok
@@ -417,17 +496,38 @@ def main(argv):
     if free < a.min_free_gb * 1024 ** 3:
         print('refusing: less than %.1f GB free' % a.min_free_gb)
         return 2
+    packed = None
+    if a.tarball:
+        dest = os.path.join(smoke, TARBALLS)
+        shutil.rmtree(dest, ignore_errors=True)
+        packed = {}
+        for r in repos:
+            try:
+                packed[r] = P.pack(os.path.join(root, r), dest, use_npm=not a.no_npm)
+            except (RuntimeError, OSError, ValueError, KeyError) as e:
+                print('refusing: cannot pack %s: %s' % (r, e))
+                return 2
+        print('         packed %d tarball(s) into %s' % (len(packed), dest))
     results = []
     for spec in a.editor:
-        results.append(gate_editor(a, smoke, root, repos, spec))
-        if lock_holders(smoke):
+        results.append(gate_editor(a, smoke, root, repos, spec, packed))
+        if not a.no_editor and lock_holders(smoke):
             print('warning: a Unity process still holds the smoke project after the run')
-    ok = report(results, repos, smoke)
+    ok = report(results, repos, smoke, packed)
     out = os.path.join(smoke, 'Logs', 'upm-tools', 'level2-report.json')
+    os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, 'w') as f:
         json.dump(results, f, indent=2, default=str)
     print('\nreport: %s' % out)
+    if packed:
+        with open(os.path.join(os.path.dirname(out), 'level2-tarballs.json'), 'w') as f:
+            json.dump(packed, f, indent=2, default=str)
+        print('tarballs: %s' % os.path.join(os.path.dirname(out), 'level2-tarballs.json'))
     tooling = any(r['tooling'] for r in results)
+    if a.no_editor:
+        print('LEVEL 2: NOT RUN (--no-editor: smoke project prepared%s)' % (
+            '' if not packed else '; packing %s' % ('clean' if ok else 'has findings')))
+        return 2 if tooling else (0 if ok else 1)
     print('LEVEL 2: %s' % ('PASS' if ok else 'FAIL'))
     return 0 if ok else (2 if tooling else 1)
 
