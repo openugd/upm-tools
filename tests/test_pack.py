@@ -49,6 +49,7 @@ class PackTests(unittest.TestCase):
         touch(self.root, 'Runtime/Untracked.cs')
         info = P.pack(self.root, self.out, use_npm=False)
         self.assertEqual(os.path.basename(info['tgz']), 'com.example.pkg-2.0.0.tgz')
+        self.assertIn('npm not used', info['method'])     # --no-npm, not "npm not found"
         self.assertNotIn('Runtime/Untracked.cs', info['files'])
         self.assertIn('Runtime/A.cs', info['files'])
         self.assertFalse(any(f.startswith('.git/') for f in info['files']))

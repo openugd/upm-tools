@@ -131,7 +131,8 @@ def pack(repo, dest, use_npm=True):
             notes += warnings
         else:
             _pack_with_tarfile(export, final)
-            method = 'git archive (npm not found: npm\'s ignore rules not applied)'
+            method = 'git archive (%s: npm\'s ignore rules not applied)' % ('npm not found' if use_npm
+                                                                             else 'npm not used')
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     files = tarball_files(final)

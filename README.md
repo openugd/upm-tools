@@ -460,9 +460,9 @@ It then prints the commands that would tag each HEAD, grouped in publication lay
 dependencies (lifetime; signal and context; corelib; widgets; ui as an independent leaf), with the
 `https://package.openupm.com/<name>` registry documents to wait for between layers. A package whose version
 does not match, or whose tag already exists on another commit, is printed as `REFUSED`, without a command. A
-package with any other finding, or with a family dependency that is not ready (transitively: a finding of its
-own or a dependency that is not ready), is printed as `# BLOCKED (...)`, commented out. A repository without an
-`origin` remote (`upm-context` today) gets a reminder instead of a push command.
+package with any other finding, or with a selected family dependency that is not ready (transitively: a finding
+of its own or a dependency that is not ready), is printed as `# BLOCKED (...)`, commented out. A repository
+without an `origin` remote (`upm-context` today) gets a reminder instead of a push command.
 
 The tag goes on the commit that was checked. After `finish.sh` and the merge into the default branch (OpenUPM
 shows the README of the default branch) it is the same commit when both are fast-forwards. The check does not
