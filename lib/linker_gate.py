@@ -105,7 +105,8 @@ def parse_args(argv):
     ap.add_argument('--without-corelib', action='store_true',
                     help='probe com.openugd.context only (needs just upm-lifetime and upm-context under --root); '
                          'leaves out the commands and presenters scenarios')
-    ap.add_argument('--out', help='work folder (default: $OPENUGD_HARNESS_OUT/linker or ./out/linker)')
+    ap.add_argument('--out', help='work folder (default: $OPENUGD_HARNESS_OUT/linker, else out/linker in the upm-tools '
+                                        'folder)')
     ap.add_argument('--no-run', action='store_true', help='skip executing the stripped probe on Mono')
     ap.add_argument('--probe', default=PROBE, help='folder with App.cs, Corelib.cs and root.xml (default: '
                                                   'linker/probe); for testing the gate itself')

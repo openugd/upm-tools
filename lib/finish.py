@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from common import family_config, family_root, git, table  # noqa: E402
+from common import config_path, family_config, family_root, git, table  # noqa: E402
 
 
 def parse_args(argv):
@@ -35,7 +35,7 @@ def entries():
     cfg = family_config()
     out = [dict(repo=p['repo'], source=p.get('source', cfg['sourceBranch']), target=p['target'])
            for p in cfg['packages']]
-    out += [dict(repo=p['repo'], source=p.get('source', cfg['sourceBranch']), target=p['target'])
+    out += [dict(repo=p['repo'], source=p.get('source', cfg['sourceBranch']), target=p['target'], path=p.get('path'))
             for p in cfg.get('finishExtra', [])]
     return out
 
@@ -62,6 +62,8 @@ def rev(repo, ref):
 
 def inspect(e, root):
     wt = os.path.join(root, e['repo'])
+    if not os.path.isdir(wt) and e.get('path'):
+        wt = config_path(e['path'])   # an entry that does not live under root (the host project)
     r = dict(e, worktree=wt, main=None, action='', detail='', commits=[], stat='', ahead=0, behind=0)
     if not os.path.isdir(wt):
         r['action'], r['detail'] = 'skip', 'no worktree at %s' % wt

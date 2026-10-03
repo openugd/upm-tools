@@ -51,7 +51,7 @@ import level2 as L2  # noqa: E402
 import pack as P  # noqa: E402
 
 TEMPLATE = os.path.join(TOOLS, 'il2cpp-template')
-DEFAULT_PROJECT = '../il2cpp-smoke'   # relative to the tools folder, like every path in config/family.json
+DEFAULT_PROJECT = '../../il2cpp-smoke'   # the committed default; relative to the tools folder, like config/family.json
 STATE = '.upm-tools.json'
 TARBALLS = 'Tarballs'
 BUILD_DIR = os.path.join('Build', 'WebGL')
@@ -93,8 +93,8 @@ def parse_args(argv):
     ap.add_argument('--stripping', default='medium', choices=sorted(LEVELS),
                     help='Managed Stripping Level of the player (default: medium)')
     ap.add_argument('--project', help='the throwaway project (default: config/family.json "il2cppSmokeProject", '
-                                      'else il2cpp-smoke next to the upm-tools folder); must be outside every git '
-                                      'work tree')
+                                      'else %s relative to the upm-tools folder); must be outside every git work '
+                                      'tree' % DEFAULT_PROJECT)
     ap.add_argument('--root', help='folder holding one checkout per package repo (default: $OPENUGD_ROOT or '
                                    'config/family.json "root")')
     ap.add_argument('--packages', help='comma-separated repo folders to install (default: all six family packages); '

@@ -38,6 +38,7 @@
   "finishExtra": [
     {
       "repo": "host",
+      "path": "../../../OpenUGD",
       "target": "main"
     }
   ],

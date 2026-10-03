@@ -12,7 +12,7 @@ repo, because it checks all the packages side by side.
 | `level2.sh --tarball` | before tagging: installs each package as OpenUPM would publish it | Unity with an activated licence; npm (optional) | packing 6 packages: about 40 s, then as above |
 | `il2cpp-smoke.sh` | before a release; after changes to registration, `[Inject]`, commands, presenters or `SignalBase` | Unity with an activated licence and its WebGL module; Chrome for the headless check | about 3 min from an empty Library |
 | `release-check.sh` | right before tagging, per package | git | 1-2 s |
-| `finish.sh` | when the v2 work is ready to land in the main checkouts | git | instant |
+| `finish.sh` | when a feature branch (`sourceBranch`, `feature/v2-exec` for 2.0) is ready to land in the main checkouts; 2.0 landed with it on 2026-10-03 | git | instant |
 
 Every script prints its options with `--help`. None of them pushes, tags, adds a remote or rewrites history.
 
@@ -48,8 +48,10 @@ behave the same from anywhere. The committed defaults assume the author's layout
   v2/il2cpp-smoke/         il2cppSmokeProject: ../../il2cpp-smoke
 ```
 
-With another layout, edit those three values or pass `--root`, `--smoke` and `--project`. Build output goes to `--out`, else `$OPENUGD_HARNESS_OUT`, else `./out` (ignored by
-git). Give every concurrent run its own output folder.
+With another layout, edit those three values or pass `--root`, `--smoke` and `--project`.
+
+Build output goes to `--out`, else `$OPENUGD_HARNESS_OUT` (both relative to the current directory), else `out/` in
+the upm-tools folder (ignored by git). Give every concurrent run its own output folder.
 
 ## level1.sh: the per-commit gate
 
@@ -615,10 +617,10 @@ dependencies (lifetime; signal and context; corelib; widgets; ui as an independe
 does not match, or whose tag already exists on another commit, is printed as `REFUSED`, without a command. A
 package with any other finding, or with a selected family dependency that is not ready (transitively: a finding
 of its own or a dependency that is not ready), is printed as `# BLOCKED (...)`, commented out. A repository
-without an `origin` remote (`upm-context` today) gets a reminder instead of a push command.
+without an `origin` remote gets a reminder instead of a push command.
 
-The tag goes on the commit that was checked. After `finish.sh` and the merge into the default branch (OpenUPM
-shows the README of the default branch) it is the same commit when both are fast-forwards. The check does not
+The tag goes on the commit that was checked. After the merge into the default branch (OpenUPM shows the README
+of the default branch) it is the same commit when the merge is a fast-forward. The check does not
 run the gates: run `level1.sh`, `linker-gate.sh` and `level2.sh --tarball` on the same commits first.
 
 Exit status: 0 every package is ready, 1 at least one is not, 2 the tools could not run.
@@ -632,9 +634,11 @@ Exit status: 0 every package is ready, 1 at least one is not, 2 the tools could 
 
 The script reads the repos from `config/family.json`:
 - `packages[].target`: `feature/v2`, or `main` for `upm-context`;
-- `finishExtra`: the host project (`main`);
-- `held`: branches the script never merges, only reports — `upm-dependency-injection`'s
-  `feature/deprecation-banner` lands on `master` by hand, after `com.openugd.context` 2.0.0 is live on OpenUPM;
+- `finishExtra`: the host project (`main`); its `path` is used when `<root>/host` does not exist (relative to the
+  upm-tools folder, like every path in the file);
+- `held`: branches the script never merges, only reports, each with the reason. Empty now: for 2.0 it held
+  `upm-dependency-injection`'s `feature/deprecation-banner`, merged by hand once `com.openugd.context` 2.0.0 was
+  live on OpenUPM;
 - `outsideTrain`: repos checked by level 1 on request but not part of the 2.0 release (`upm-configuration`).
 
 It finds each main checkout through the worktree's `git rev-parse --git-common-dir` and prints, per repo:
@@ -649,7 +653,7 @@ It finds each main checkout through the worktree's `git rev-parse --git-common-d
 
 git itself still refuses if an untracked file would be overwritten. The script never switches branches,
 never moves another ref and never pushes. It prints the `git push` commands to run later, and says when
-a repo has no remote yet (`upm-context` and the host project today).
+a repo has no remote yet.
 
 Exit status: 0 nothing blocked, 1 at least one repo cannot be fast-forwarded as things stand, 2 the tools
 could not run.
@@ -682,3 +686,7 @@ the build-folder check, the disk guard (a real process group stopped), licence d
 end to end against a fake editor (`tests/fixtures/il2cpp-smoke/fake_unity.py`) for a licence failure, a compile
 error, a passing and a failing page. Finally they compile the template's C# against the checkouts with the editor's
 Roslyn and run the engine-free checks on Mono before and after UnityLinker (skipped without the default editor).
+
+## Licence
+
+Apache-2.0. See [LICENSE.md](LICENSE.md).
