@@ -457,7 +457,7 @@ def print_build(res):
             ['BuildReport result', r.get('result', '(no result file)')],
             ['BuildReport time', '%.0f s' % r['totalSeconds'] if 'totalSeconds' in r else '-'],
             ['log', res.get('log')]]
-    print(table(rows, ['', '']))
+    print(table(rows, ['step', 'value']))
     settings = r.get('settings') or {}
     if settings:
         print('  player settings: ' + ', '.join('%s=%s' % kv for kv in settings.items()))

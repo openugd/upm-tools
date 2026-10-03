@@ -545,7 +545,10 @@ Measured on 2026-10-03 (6000.0.41f1, Medium, all six packages, first build from 
 194 MB, leaving a 68 MB Library and an 84 MB project. Free disk stayed above 11 GB. Sizes here are decimal; the
 script prints binary units (`MB` = MiB).
 
-**Status on 2026-10-03: the gate passes.** The IL2CPP WebGL player built at Medium reported
+At High, right after (Library warm, IL2CPP output deleted): editor run 115 s, BuildReport 98 s. Build 14.0 MB:
+`.wasm` 10.3 MB, `.data` 3.3 MB. Peak 239 MB, 162 MB freed afterwards.
+
+**Status on 2026-10-03: the gate passes.** The IL2CPP WebGL players built at Medium and at High each reported
 `OPENUGD-IL2CPP: PASS 29/29` in headless Chrome, `child-context` included.
 
 ### Output and exit status
