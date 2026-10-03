@@ -430,7 +430,9 @@ checkouts are not inspected in this mode, because Unity cannot write into a tarb
 scratch folder to try the packing without touching the real smoke project. `level2-tarballs.json` next to
 `level2-report.json` lists every packed file.
 
-Exit status: 0 pass, 1 the gate failed, 2 the editor could not run (lock, licence, timeout).
+Exit status: 0 pass, 1 the gate failed, 2 the editor could not run (lock, licence, timeout) or a package could
+not be packed. With `--no-editor` it is 0 when preparing (and packing) found nothing, 1 on a finding (`NOT PACKED`,
+`EXTRA`, a sample that is missing), 2 when it could not run.
 
 ## release-check.sh: before tagging
 
@@ -444,9 +446,9 @@ It reads the committed tree of each checkout's HEAD, which is what a tag would p
 
 | Check | Fails when |
 | --- | --- |
-| `version` | `package.json` `version` is not the planned version (`--version`, default `release.version` in `config/family.json`: `2.0.0`). The tag is the version itself, as the existing tags are (`1.2.0`, `0.6.1`), so this is the "tag does not equal package.json version" refusal. corelib's tag `1.2.0` once published as `0.2.0`. |
+| `version` | `package.json` `version` is not the planned version (`--version`, default `release.version` in `config/family.json`: `2.0.0`). The tag is the version itself, as the existing tags are (`1.2.0`, `0.6.1`), so this is the "tag does not equal package.json version" refusal. The decision report records that this happened once: corelib's tag `1.2.0` published as `0.2.0` (the commit titled `1.2.0`, `1df0781`, sets `version` to `0.2.0`). |
 | `tag` | a tag of that name already exists and does not point at HEAD. A published version cannot change. |
-| `changelog` | the first `## ` heading of `CHANGELOG.md` is neither `## [Unreleased]` nor `## [<version>]`, or the file has both (one release, two sections). An `[Unreleased]` heading passes with a note to date it in the release commit. |
+| `changelog` | the first `## ` heading of `CHANGELOG.md` is neither `## [Unreleased]` nor `## [<version>]`, or the file has both (one release, two sections). An `[Unreleased]` heading passes with a note: rename it `## [<version>] - <date>` in a release commit, then run the check again, because the printed tag command names the HEAD that was checked. |
 | `readme` | the `README.md` section whose heading starts with "Install" does not pin the version in all three forms: `openupm add <name>@<version>`, a scoped-registry entry `"<name>": "<version>"`, and a git URL `"<name>": "<repository>.git#<version>"` matching `package.json` `repository`. The git form must also list every family package the package needs, transitively, each pinned to a tag of the same major at or above the declared minimum, because git URLs do not resolve OpenUPM dependencies. |
 | `family deps` | a `com.openugd.*` dependency is not declared at a minimum of the planned major (`2.x`), or its minimum is above that package's own version under `--root` (the install would not resolve). |
 | `unity` | `package.json` `unity` is not `release.unity` (`6000.0`). |
@@ -456,10 +458,11 @@ It reads the committed tree of each checkout's HEAD, which is what a tag would p
 
 It then prints the commands that would tag each HEAD, grouped in publication layers computed from the family
 dependencies (lifetime; signal and context; corelib; widgets; ui as an independent leaf), with the
-`https://package.openupm.com/<name>` pages to wait for between layers. A package whose version does not match
-is printed as `REFUSED`, without a command. A package with any other finding, or whose family dependency has
-one, is printed as `# BLOCKED (...)`, commented out. A repository without an `origin` remote (`upm-context`
-today) gets a reminder instead of a push command.
+`https://package.openupm.com/<name>` registry documents to wait for between layers. A package whose version
+does not match, or whose tag already exists on another commit, is printed as `REFUSED`, without a command. A
+package with any other finding, or with a family dependency that is not ready (transitively: a finding of its
+own or a dependency that is not ready), is printed as `# BLOCKED (...)`, commented out. A repository without an
+`origin` remote (`upm-context` today) gets a reminder instead of a push command.
 
 The tag goes on the commit that was checked. After `finish.sh` and the merge into the default branch (OpenUPM
 shows the README of the default branch) it is the same commit when both are fast-forwards. The check does not
@@ -517,6 +520,6 @@ check (its rules on a synthetic editor, the map read from each installed editor,
 AudioListener fixture, which needs the default editor and the .NET SDK and is skipped without them), README
 fence extraction with the opt-out marker, the `.meta` check on a throwaway git repository, the tarball packing
 (only committed files, npm's ignore rules reported, samples copied out of the tarball; the npm case is skipped
-without npm), and `release-check.sh` on a throwaway two-package family (version refusal, an existing tag,
-README pins and dependency lists, CHANGELOG headings, dependency minimums, `.meta` read from HEAD, a dirty
-worktree, layered tag commands).
+without npm), and `release-check.sh` on a throwaway family of two or three packages (version refusal, an existing
+tag, README pins and dependency lists, CHANGELOG headings, dependency minimums, `.meta` read from HEAD, a dirty
+worktree, layered tag commands, blocking through a dependency's dependency).

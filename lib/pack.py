@@ -67,7 +67,10 @@ def _pack_with_npm(npm, src, dest):
     entry = data[0] if isinstance(data, list) else data
     warnings = [l.strip() for l in p.stderr.decode('utf-8', 'replace').splitlines()
                 if l.strip().startswith('npm WARN')]
-    return os.path.join(dest, entry['filename']), warnings
+    produced = os.path.join(dest, entry['filename'])
+    if not os.path.exists(produced):        # an npm 7 release older than --pack-destination writes into the cwd
+        produced = os.path.join(src, entry['filename'])
+    return produced, warnings
 
 
 def _pack_with_tarfile(src, path):
@@ -132,13 +135,13 @@ def pack(repo, dest, use_npm=True):
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     files = tarball_files(final)
-    in_tar = set(files)
+    in_tar, in_commit = set(files), set(tracked)
     # npm always leaves out .gitignore/.npmignore, and Unity never imports a dot-name: only the rest matters.
     missing = [f for f in tracked if f not in in_tar]
     hidden = lambda f: any(part.startswith('.') for part in f.split('/'))
     dropped = sorted(f for f in missing if not hidden(f))
     dropped_hidden = sorted(f for f in missing if hidden(f))
-    extra = sorted(f for f in files if f not in set(tracked))
+    extra = sorted(f for f in files if f not in in_commit)
     if any(f == '.git' or f.startswith('.git/') for f in files):
         raise RuntimeError('%s contains .git' % final)
     return {'repo': os.path.basename(repo.rstrip('/')), 'path': repo, 'name': name, 'version': version,

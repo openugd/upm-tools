@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Release check: is each package's HEAD ready to be tagged as the planned version? Tags nothing, writes nothing.
+"""Release check: is each package's HEAD ready to be tagged as the planned version? Tags nothing and changes no
+repository (--json writes only the report file).
 
 Per package, reading the committed tree of HEAD (what a tag would publish):
   version      package.json "version" equals the planned version (config/family.json "release.version",
@@ -293,8 +294,9 @@ def check_package(repo, a, family):
     problems, heading = check_changelog(show(repo, 'CHANGELOG.md'), a.version)
     put('changelog', problems)
     if heading and heading.lower().startswith('## [unreleased'):
-        r['notes'].append('CHANGELOG: date the "## [Unreleased]" heading as "## [%s] - <date>" in the release '
-                          'commit' % a.version)
+        r['notes'].append('CHANGELOG: the heading is "## [Unreleased]"; rename it "## [%s] - <date>" in a release '
+                          'commit and run release-check again (the tag command below names the current HEAD)'
+                          % a.version)
 
     closure = family_closure(pj['name'], family, pj.get('dependencies') or {})
     put('readme', check_readme(show(repo, 'README.md'), pj, a.version, family, closure))
@@ -373,6 +375,22 @@ def layers(results):
     return [out[k] for k in sorted(out)], leaves
 
 
+def mark_ready(results):
+    """'ready': no findings of its own and every selected family dependency ready, transitively. A package whose
+    dependency's dependency cannot be tagged cannot be tagged either."""
+    by_name = {r['name']: r for r in results}
+
+    def ready(r, seen=()):
+        if 'ready' not in r:
+            if r['name'] in seen:
+                raise SystemExit('family dependency cycle through %s' % r['name'])
+            r['ready'] = r['ok'] and all(ready(by_name[d], seen + (r['name'],)) for d in r['deps'] if d in by_name)
+        return r['ready']
+
+    for r in results:
+        ready(r)
+
+
 def print_commands(results, version):
     print('\nTag commands (not run). Each tags the commit checked above; after finish.sh and the merge into the '
           'default branch it is the same commit when both are fast-forwards.')
@@ -391,7 +409,7 @@ def print_commands(results, version):
                 print('# REFUSED %s: %s' % (r['repo'], r['checks']['tag'][0]))
                 continue
             blocked = [k for k, v in r['checks'].items() if v]
-            blocked += ['dependency %s not ready' % d for d in r['deps'] if d in by_name and not by_name[d]['ok']]
+            blocked += ['dependency %s not ready' % d for d in r['deps'] if d in by_name and not by_name[d]['ready']]
             prefix = '# BLOCKED (%s) ' % ', '.join(blocked) if blocked else ''
             if r['tagged_at_head']:
                 print('%s# %s: tag %s already at HEAD' % (prefix, r['repo'], version))
@@ -415,6 +433,7 @@ def main(argv):
     family = load_family(root)
     print('RELEASE CHECK  version %s  root %s  (nothing is tagged)' % (a.version, root))
     results = [check_package(os.path.join(root, repo), a, family) for repo in repos]
+    mark_ready(results)
     labels = list(results[0]['checks']) if results else []
     rows = []
     for label in labels:

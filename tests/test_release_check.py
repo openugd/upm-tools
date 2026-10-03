@@ -1,4 +1,4 @@
-"""Unit tests for release-check.sh (lib/release_check.py), on a throwaway family of two git repositories."""
+"""Unit tests for release-check.sh (lib/release_check.py), on a throwaway family of two or three git repositories."""
 import contextlib
 import hashlib
 import io
@@ -103,7 +103,7 @@ class ReleaseCheckTests(unittest.TestCase):
         text = io.StringIO()
         with contextlib.redirect_stdout(text):
             code = R.main(['--root', self.root, '--packages', 'upm-lifetime,upm-signal', '--version', '2.0.0',
-                           '--json', out] + list(extra))
+                           '--json', out] + list(extra))      # a later --packages in extra wins
         with open(out) as f:
             return code, {r['repo']: r for r in json.load(f)}, text.getvalue()
 
@@ -136,6 +136,22 @@ class ReleaseCheckTests(unittest.TestCase):
         self.assertTrue(res['upm-lifetime']['checks']['tag'])
         # Its dependent is blocked, not tagged on top of a package that cannot be released.
         self.assertIn('# BLOCKED (dependency com.openugd.lifetime not ready) git -C %s tag' % self.signal, text)
+
+    def test_blocking_follows_dependencies_transitively(self):
+        # context -> signal -> lifetime: when lifetime cannot be tagged, signal is blocked by it, and so is context,
+        # although its only direct dependency has no finding of its own.
+        context = make_package(self.root, 'upm-context', 'com.openugd.context', '2.0.0',
+                               {'com.openugd.signal': '2.0.0'}, [
+            '"com.openugd.lifetime": "https://github.com/openugd/upm-lifetime.git#2.0.0"',
+            '"com.openugd.signal": "https://github.com/openugd/upm-signal.git#2.0.0"',
+            '"com.openugd.context": "https://github.com/openugd/upm-context.git#2.0.0"'])
+        write(self.lifetime, 'Runtime/Dirty.cs', 'class D {}\n')
+        code, res, text = self.run_check('--packages', 'upm-lifetime,upm-signal,upm-context')
+        self.assertEqual(code, 1)
+        self.assertTrue(res['upm-signal']['ok'] and res['upm-context']['ok'], text)
+        self.assertFalse(res['upm-context']['ready'])
+        self.assertIn('# BLOCKED (dependency com.openugd.lifetime not ready) git -C %s tag' % self.signal, text)
+        self.assertIn('# BLOCKED (dependency com.openugd.signal not ready) git -C %s tag' % context, text)
 
     def test_readme_must_pin_every_form_and_list_dependencies(self):
         text = read(self.signal, 'README.md')
