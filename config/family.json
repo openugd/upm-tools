@@ -3,6 +3,11 @@
   "root": "~/workspace/openugd/v2/wt",
   "smokeProject": "~/workspace/openugd/v2/smoke",
   "sourceBranch": "feature/v2-exec",
+  "release": {
+    "description": "release-check.sh: the version the train is tagged as (each tag equals package.json 'version', no prefix, as the existing tags are) and the 'unity' minimum every package declares (DECISIONS-v2: minimum Unity 6000.0).",
+    "version": "2.0.0",
+    "unity": "6000.0"
+  },
   "packages": [
     {
       "repo": "upm-lifetime",
