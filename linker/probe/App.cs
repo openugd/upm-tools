@@ -5,6 +5,9 @@
 // Every scenario prints one "CHECK <name>=<True|False>" line; the gate expects all of them True.
 // Nothing here may wrap a registration call in an unannotated generic helper: that is a user-side IL2091
 // by design, and the gate must stay green once the package is fixed.
+//
+// Corelib.cs adds the commands and presenters scenarios when it is compiled with PROBE_CORELIB (the default;
+// linker-gate.sh --without-corelib leaves it out and needs only upm-lifetime and upm-context).
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -77,7 +80,7 @@ namespace Probe
 
     public static class Entry
     {
-        static void Check(string name, bool ok) { Console.WriteLine("CHECK " + name + "=" + ok); }
+        internal static void Check(string name, bool ok) { Console.WriteLine("CHECK " + name + "=" + ok); }
 
         public static void Run()
         {
@@ -102,6 +105,9 @@ namespace Probe
             builder.Services.Add<Members>();
             builder.Services.Add<WithOptional>();
             builder.Services.Add(c => new FromFactory());
+#if PROBE_CORELIB
+            CorelibProbe.Register(builder.Services);
+#endif
             var context = await builder.BuildAsync();
 
             Check("greedy-constructor", context.Resolve<SaveService>().Clock != null);
@@ -118,6 +124,9 @@ namespace Probe
             var view = new ViewLike();
             context.Inject(view);
             Check("inject-existing-object", view.Clock != null && view.Save != null);
+#if PROBE_CORELIB
+            CorelibProbe.Run(context);
+#endif
         }
 
         public static void Main() { Run(); }
