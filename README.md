@@ -18,8 +18,8 @@ Every script prints its options with `--help`. None of them pushes, tags, adds a
 
 ## Requirements
 
-- macOS with Unity editors installed through Unity Hub under `/Applications/Unity/Hub/Editor/`.
-  `6000.0.41f1` is the default. `6000.3.3f1` is also supported. Both install layouts are handled: 6000.0
+- macOS with Unity editors installed through Unity Hub under `/Applications/Unity/Hub/Editor/`
+  (`$OPENUGD_UNITY_EDITORS` replaces that folder, as CI does). `6000.0.41f1` is the default. `6000.3.3f1` is also supported. Both install layouts are handled: 6000.0
   keeps the scripting files in `Unity.app/Contents`, 6000.3 in `Unity.app/Contents/Resources/Scripting`.
 - Python 3.9 or newer (the system `python3` is enough; no third-party modules).
 - .NET SDK 10 (`dotnet`) for level 1, its metadata reader (`asmrefs/`) and the linker gate's inspector. The
@@ -686,6 +686,41 @@ the build-folder check, the disk guard (a real process group stopped), licence d
 end to end against a fake editor (`tests/fixtures/il2cpp-smoke/fake_unity.py`) for a licence failure, a compile
 error, a passing and a failing page. Finally they compile the template's C# against the checkouts with the editor's
 Roslyn and run the engine-free checks on Mono before and after UnityLinker (skipped without the default editor).
+The CI helpers are covered too: the xar table-of-contents reader on synthetic archives, the cpio subset by running
+the real `curl -r | gzip -dc | cpio -i` pipeline on a fake installer, and the clone commands.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push to `main`, every pull request, every Monday (the package repos move
+on their own) and on demand:
+
+- **lint** (Ubuntu 24.04, pinned because Python 3.9 has no build for 26.04): `lib/`, `tests/` and `ci/` compile on
+  Python 3.9, the oldest supported; every `*.sh` parses; every `config` JSON parses.
+- **gates** (macOS 15, arm64): the tools' own tests, `level1.sh` on the train, `level1.sh --packages
+  upm-configuration`, and `linker-gate.sh`, each run even when an earlier one failed. The reports and logs
+  (`level1-report.json` and the summary of each level 1 run, its restore log and build logs,
+  `linker-gate-report.json` and the UnityLinker logs) are uploaded as the `gate-reports` artifact.
+
+Neither job installs Unity or needs a licence. `ci/fetch-editor.py` reads the editor installer's xar table of contents
+with an HTTP range request and streams only its payload (a 5 GB gzip cpio stream) through `cpio`, keeping the files
+the gates read: the reference DLLs, netstandard, Roslyn, the .NET runtime, Mono, UnityLinker, the built-in packages,
+the template script assemblies, the NUnit and Test Framework tarballs and the module lists, about 2.3 GB of the
+8.7 GB editor. That folder is cached per editor version and per version of the script, and saved right after the
+fetch, so a failing gate does not cost the next run the 5 GB download. A stalled download is retried from the start.
+`ci/clone-packages.py` shallow-clones the repos in `config/family.json` (`packages` and `outsideTrain`) from
+`github.com/openugd` at their default branches. A manual run can name one branch or tag for the train
+(`packages-ref`, for example `2.0.0`); the repos outside the train stay on their default branch.
+
+`level2.sh` and `il2cpp-smoke.sh` start the editor, so they need a full install with an activated licence and are
+not in CI: run them on a machine where Unity is installed.
+
+To reproduce the CI job locally:
+
+```sh
+python3 ci/fetch-editor.py --version 6000.0.41f1 --changeset 46e447368a18 --dest /tmp/unity-editors
+python3 ci/clone-packages.py --dest /tmp/packages
+OPENUGD_UNITY_EDITORS=/tmp/unity-editors OPENUGD_ROOT=/tmp/packages ./level1.sh
+```
 
 ## Licence
 

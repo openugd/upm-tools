@@ -8,7 +8,8 @@ import os
 import re
 import tarfile
 
-HUB_EDITORS = '/Applications/Unity/Hub/Editor'
+# Where a bare version ('6000.0.41f1') is looked up. CI points it at a partial editor from ci/fetch-editor.py.
+HUB_EDITORS = os.environ.get('OPENUGD_UNITY_EDITORS') or '/Applications/Unity/Hub/Editor'
 DEFAULT_EDITOR = '6000.0.41f1'
 _VERSION_RE = re.compile(r'^\d+\.\d+\.\d+[a-z]+\d+$')
 

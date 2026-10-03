@@ -1,0 +1,133 @@
+# The gates that need no Unity licence, on every push, pull request and once a week (the package repos move on
+# their own). level2.sh and il2cpp-smoke.sh start the editor and need an activated licence, so they stay local.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      packages-ref:
+        description: Branch or tag to check out in every train repo, e.g. 2.0.0 (empty = each repo's default branch)
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces its run; runs on main (push, schedule, manual) queue instead of
+# cancelling each other.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # The editor whose files level 1 and the linker gate read. The changeset is UnityBuildNumber in its
+  # Unity.app/Contents/Info.plist (or the hash in the Unity Hub deep link).
+  UNITY_VERSION: 6000.0.41f1
+  UNITY_CHANGESET: 46e447368a18
+
+jobs:
+  lint:
+    name: Python 3.9, shell and JSON syntax
+    # Pinned: setup-python has no Python 3.9 for Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.9'
+      - name: Python compiles on the minimum supported version
+        run: python -m compileall -q lib tests ci
+      - name: Shell scripts parse
+        run: for f in *.sh harness/*.sh; do sh -n "$f"; done
+      - name: JSON config parses
+        run: for f in config/*.json config/unity/*.json; do python -m json.tool "$f" > /dev/null; done
+
+  gates:
+    name: Tool tests, level 1, linker gate (macOS, editor files only)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Locations
+        run: |
+          echo "OPENUGD_UNITY_EDITORS=$RUNNER_TEMP/unity-editors" >> "$GITHUB_ENV"
+          echo "OPENUGD_ROOT=$RUNNER_TEMP/packages" >> "$GITHUB_ENV"
+
+      # Restore and save are separate so that the editor files are cached as soon as they are fetched, even when
+      # a gate fails later (actions/cache saves only when the whole job succeeds).
+      - name: Restore the editor files
+        id: editor
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ runner.temp }}/unity-editors/${{ env.UNITY_VERSION }}
+          key: unity-subset-${{ env.UNITY_VERSION }}-${{ runner.arch }}-${{ hashFiles('ci/fetch-editor.py') }}
+
+      - name: Fetch the editor files (no install, no licence)
+        id: fetch
+        if: steps.editor.outputs.cache-hit != 'true'
+        timeout-minutes: 40
+        run: python3 ci/fetch-editor.py --version "$UNITY_VERSION" --changeset "$UNITY_CHANGESET" --dest "$OPENUGD_UNITY_EDITORS"
+
+      - name: Save the editor files
+        if: steps.fetch.outcome == 'success'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ runner.temp }}/unity-editors/${{ env.UNITY_VERSION }}
+          key: ${{ steps.editor.outputs.cache-primary-key }}
+
+      - name: Clone the package repos
+        id: clone
+        env:
+          PACKAGES_REF: ${{ inputs.packages-ref }}
+        run: python3 ci/clone-packages.py --dest "$OPENUGD_ROOT" --ref "$PACKAGES_REF"
+
+      # The gates below run independently once the editor files and the checkouts are in place.
+      - name: Tool tests
+        if: ${{ !cancelled() && steps.clone.outcome == 'success' }}
+        run: python3 -m unittest discover -s tests
+
+      - name: Level 1, the 2.0 train
+        if: ${{ !cancelled() && steps.clone.outcome == 'success' }}
+        run: ./level1.sh
+
+      - name: Level 1, upm-configuration (outside the train)
+        if: ${{ !cancelled() && steps.clone.outcome == 'success' }}
+        run: ./level1.sh --packages upm-configuration --out out/configuration
+
+      - name: Linker gate
+        if: ${{ !cancelled() && steps.clone.outcome == 'success' }}
+        run: ./linker-gate.sh
+
+      - name: Upload the reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gate-reports
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            out/level1-report.json
+            out/level1-summary.txt
+            out/restore.log
+            out/logs/
+            out/configuration/level1-report.json
+            out/configuration/level1-summary.txt
+            out/configuration/restore.log
+            out/configuration/logs/
+            out/linker/linker-gate-report.json
+            out/linker/*/*.log

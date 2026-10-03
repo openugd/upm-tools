@@ -47,9 +47,11 @@ def parse_args(argv):
                                    'config/family.json "root")')
     ap.add_argument('--packages', help='comma-separated repo folders to check (default: the six family '
                                        'packages); dependencies are added automatically')
-    ap.add_argument('--out', help='build output folder (default: $OPENUGD_HARNESS_OUT, else out/ in the upm-tools folder)')
+    ap.add_argument('--out', help='build output folder (default: $OPENUGD_HARNESS_OUT, else out/ in the upm-tools '
+                                  'folder)')
     ap.add_argument('--unity', default=os.environ.get('UNITY_EDITOR', DEFAULT_EDITOR),
-                    help='editor version under /Applications/Unity/Hub/Editor or a path (default: %(default)s)')
+                    help='editor version under $OPENUGD_UNITY_EDITORS (default /Applications/Unity/Hub/Editor), or a '
+                         'path (default: %(default)s)')
     ap.add_argument('--unity-version', help='override the editor version read from the install')
     ap.add_argument('--package-map', help='package-version map for versionDefines (default: '
                                           'config/unity/<editor version>.json)')
