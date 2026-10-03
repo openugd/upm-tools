@@ -10,6 +10,7 @@ repo, because it checks all the packages side by side.
 | `linker-gate.sh` | changes to `com.openugd.context` registration or `[Inject]`, to corelib's commands or presenter factory; before a release | an installed editor (its files only) | 20 s per editor |
 | `level2.sh` | before a release, or after `.meta`/asmdef/package.json changes | Unity with an activated licence | about 1 min for three packages (measured from an empty Library) |
 | `level2.sh --tarball` | before tagging: installs each package as OpenUPM would publish it | Unity with an activated licence; npm (optional) | packing 6 packages: about 40 s, then as above |
+| `il2cpp-smoke.sh` | before a release; after changes to registration, `[Inject]`, commands, presenters or `SignalBase` | Unity with an activated licence and its WebGL module; Chrome for the headless check | about 3 min from an empty Library |
 | `release-check.sh` | right before tagging, per package | git | 1-2 s |
 | `finish.sh` | when the v2 work is ready to land in the main checkouts | git | instant |
 
@@ -27,6 +28,9 @@ Every script prints its options with `--help`. None of them pushes, tags, adds a
 - `level2.sh` only: a Unity licence already activated in Unity Hub (Personal is fine), because it starts
   the editor in batchmode. `--tarball` packs with `npm` when it is on the `PATH` (npm 7 or newer; tested with
   10.8); without it the tarball is written directly and npm's ignore rules are not applied (the report says so).
+
+- `il2cpp-smoke.sh` only: the same licence, the editor's WebGL module (`PlaybackEngines/WebGLSupport`), and Google
+  Chrome (or Chromium/Edge) for the headless check; without a browser, `--no-check` builds and serves only.
 
 The package checkouts are found under `config/family.json` → `root`
 (`~/workspace/openugd/v2/wt`), one folder per repo (`upm-lifetime`, `upm-signal`,
@@ -336,7 +340,14 @@ rejects the type. That is why the probe never does it.
 Limits:
 - The gate does not build an IL2CPP player. The linker's output is what IL2CPP compiles, but the runtime
   check uses desktop Mono. Nothing the probe runs touches the engine, so the engine modules are linked but never
-  loaded.
+  loaded. `il2cpp-smoke.sh` builds and runs the real player.
+- Mono cannot run every IL2CPP-mode linker output. With `--dotnetruntime=il2cpp`, UnityLinker removes interface
+  methods nothing calls, and IL2CPP fills those vtable slots itself; Mono refuses to load such a type. Building a
+  child context walks `Context.Contracts`, an iterator whose `IEnumerator.Reset` is removed, so on Mono it throws
+  `TypeLoadException: VTable setup of type OpenUGD.Context+<get_Contracts>d__24 failed` at Medium and High. Linked
+  with `--dotnetruntime=mono`, `Reset` stays and it passes; the IL2CPP player passes `child-context` too. The
+  probe builds no child context, so the gate never meets this. A probe scenario added later that fails on Mono
+  with that exception is not evidence about IL2CPP.
 - Presenters are covered through `ContextPresenterFactory` and `Presenter.Root`/`AddPresenter`; views
   (`Presenter<TView>`, `ViewBehaviour`) and `ContextBehaviour` are not, because they need the engine at runtime.
 - `IL5999` "unhandled reflection" notes on OpenUGD code are counted but do not fail the gate.
@@ -434,6 +445,133 @@ Exit status: 0 pass, 1 the gate failed, 2 the editor could not run (lock, licenc
 not be packed. With `--no-editor` it is 0 when preparing (and packing) found nothing, 1 on a finding (`NOT PACKED`,
 `EXTRA`, a sample that is missing), 2 when it could not run.
 
+## il2cpp-smoke.sh: one IL2CPP player that boots a container
+
+```sh
+./il2cpp-smoke.sh                          # pack, build at Medium, serve, check in headless Chrome, stop the server
+./il2cpp-smoke.sh --stripping high         # the same at High
+./il2cpp-smoke.sh --serve                  # leave the server running and print its URL
+./il2cpp-smoke.sh --no-build --serve       # serve and check the build already in the project
+./il2cpp-smoke.sh --stop                   # stop a server left running by --serve
+./il2cpp-smoke.sh --no-editor              # pack and prepare the project only; Unity is not started
+```
+
+The linker gate strips with the real UnityLinker but runs the result on desktop Mono. This script builds an actual
+IL2CPP player, so AOT compilation, IL2CPP's generic sharing and the stripped runtime are exercised too. The editor
+installed here has no Mac IL2CPP module, so the player is WebGL, which is always IL2CPP.
+
+1. **Project.** It packs each family package from its checkout's HEAD the way OpenUPM publishes a tag (`lib/pack.py`,
+   as `level2.sh --tarball` does) into `<project>/Tarballs`. It then creates or refreshes the throwaway project,
+   by default `~/workspace/openugd/v2/il2cpp-smoke` (`config/family.json` →
+   `il2cppSmokeProject`), from `il2cpp-template/`:
+   - `Packages/manifest.json` lists `com.unity.ugui` (version from the editor's package map) and a
+     `file:../Tarballs/<name>-<version>.tgz` reference per family package. All six are installed by default, so
+     widgets and ui are compiled into the player too;
+   - `Assets/Il2CppSmoke/` holds the checks (`Boot.cs`, `Checks.cs`, `Services.cs` and three small MonoBehaviours)
+     and the build script (`Editor/SmokeBuild.cs`). `Assets/Plugins/WebGL/OpenUGDSmoke.jslib` lets the player set
+     `document.title`;
+   - a file an earlier refresh copied and the template no longer has is removed with its `.meta`. Switching editors,
+     or `--clean`, deletes `Library`.
+2. **Build.** The editor runs in batchmode with `-buildTarget WebGL -executeMethod Il2CppSmoke.Editor.SmokeBuild.Run`.
+   The build script recreates `Assets/Scenes/Boot.unity` (a camera and the `Boot` component) and sets:
+   - IL2CPP, Managed Stripping Level `Medium` (`--stripping high`: `High`), a release build (not development),
+     IL2CPP compiler configuration Release;
+   - compression `Disabled`, so a plain static server can serve the build; no data caching; Code Optimization
+     `BuildTimes` (only emscripten's optimisation level: stripping and IL2CPP's output are unaffected);
+   - stack traces off for `Log` and `Warning`, so each check is one console line.
+
+   Everything else stays at Unity's defaults, notably WebGL exception support "explicitly thrown exceptions only",
+   as a shipped game has it. The script writes `Logs/upm-tools/build-result.json`: the BuildReport result, time, size,
+   errors and the effective player settings. A failed build, compile errors or a missing result fail the run.
+3. **Build folder and disk.** It requires `Build/WebGL/index.html` and one uncompressed `*.loader.js`,
+   `*.framework.js`, `*.data` and `*.wasm` under `Build/WebGL/Build/`. It prints the build time, the build size
+   per file, the largest folders in `Library`, then deletes `Library/Bee/artifacts/WebGL` (IL2CPP's C++ and the
+   compiled objects), `Library/Il2cppBuildCache`, `Library/PlayerDataCache` and `Temp` unless `--keep-intermediates`
+   is given, and prints Library size, project size and free disk.
+4. **Server.** It starts `python3 -m http.server --bind 127.0.0.1 --directory <build>` on a free port (or `--port`)
+   in its own session and checks that `index.html`, the loader, framework, `.data` and `.wasm` answer 200. It prints
+   each content type; Python 3.9's `http.server` sends the `.wasm` as `application/wasm`, which Unity's loader needs
+   for streaming compilation. The PID and URL go to `Logs/upm-tools/server.json`.
+5. **Headless check.** It opens the page in headless Chrome, driven over the DevTools protocol through
+   `--remote-debugging-pipe` with a throwaway profile (the user's own Chrome profile is never used), and waits up
+   to `--check-timeout` seconds for `document.title` to carry the summary. It prints every check line from the
+   console and any console error or page exception.
+6. **Stop.** Without `--serve` it stops the server. With `--serve` it prints the URL and the commands that stop it:
+   `./il2cpp-smoke.sh --stop`, or `kill <pid>`.
+
+### What the player checks
+
+`Boot` runs 29 checks through the packages' public API only. Each prints `OPENUGD-IL2CPP check <name>: PASS` or
+`... FAIL <reason>`. Then it prints exactly one summary line, which the `.jslib` also writes into the page title:
+
+- `OPENUGD-IL2CPP: PASS <n>/<n>`;
+- `OPENUGD-IL2CPP: FAIL <k>/<n> <names>`, where `k` is the number of failed checks and `names` lists exactly those
+  checks, comma-separated.
+
+The set of checks is fixed. A check that cannot run (its context did not build, or the 60-second in-player timeout
+passed) counts as failed.
+
+| Area | Checks |
+| --- | --- |
+| player | `player-il2cpp`: a player, built with `ENABLE_IL2CPP` |
+| lifetime | `lifetime-nesting`: one LIFO sequence of actions and nested scopes, cascade, `AsCancellationToken`; `lifetime-terminated`: registering on a terminated lifetime runs at once, a nested scope is born terminated |
+| signal | `signal-struct-state`: a signal of the game's own on `SignalBase.Dispatch<TState>` with a struct state, unsubscribed by its lifetime; `signal-generic-state`: the `Signal3<T1,T2,T3>` from the docs over value types (a `ValueTuple` state); `signal-covariance`: `Signal<string>` used as `ISignal<object>` |
+| logging | `log-unity-sink`: `LogRoot.UseUnityConsole` reaches `Debug.Log` with its tag, and stops when its lifetime ends |
+| context | `context-build`: `BuildAsync` on `PlaySession.Lifetime`, with an `IAwakeService` that awaits `Task.Yield()`; `constructor-implicit`, `constructor-greedy` (widest of three), `constructor-inject` (`[Inject]` beats a wider constructor); `inject-field`, `inject-property`, `inject-private-field`, `inject-optional` (`[Inject(Optional = true)]` property and field, the field keeping its initializer); `boot-awake-initialize` (both phases, in order, resumed on the main thread); `collection-elements` (`AsElementOf` + `IReadOnlyList<T>` in registration order); `collection-empty` (a list nothing contributes to: an array type no code creates); `child-context` (inherit, shadow, dispose its own only); `instantiate-unregistered` (`Instantiate<T>()` and `Instantiate<T>(args)`); `inject-monobehaviour` (`Context.Inject` on a component added at run time); `context-dispose` |
+| presenters | `presenter-attach-inject` (`new` + `AddPresenter` under a `Presenter.Root` over `ContextPresenterFactory`: `[Inject]` members before `OnInitialize`); `presenter-factory-create` (`Create(typeof(T))`: greedy constructor plus `[Inject]` member, and the factory resolved as `IPresenterFactory`); `presenter-view` (`Presenter<HudView>` with a `ViewBehaviour` view: `ViewLifetime`, `SetView(null)`); `presenter-close` |
+| commands | `command-register-tell` (`Map<Buy>().RegisterCommand<BuyCommand>()` and `Tell`: greedy constructor with the message, the execution `Lifetime` and a service, plus an `[Inject]` member); `command-unregister` (ending the registration) |
+| corelib host | `context-behaviour`: a `ContextBehaviour` added at run time boots its own context from `Awake`, `OnStarted` runs, `OnUpdate` fires |
+
+`Checks.cs` and `Services.cs` reference no engine type. `tests/test_il2cpp_smoke.py` compiles them with
+`tests/fixtures/il2cpp-smoke/Harness.cs` and runs the 24 engine-free checks on the editor's Mono, as compiled and
+after UnityLinker at Medium. That proves each check's expectation before a player is built. After the linker it
+tolerates only the Mono vtable failure described under the linker gate's limits.
+
+### Safety and disk
+
+The script refuses to run when:
+- the project sits inside a git work tree;
+- a process holds its `Temp/UnityLockfile`, or a Unity process runs on it;
+- it is about to build and less than `--min-free-gb` (4 GB) of disk is free.
+
+While the editor runs, it checks free disk every 5 s and the project size every 30 s. It stops the editor's whole
+process group when free disk drops under `--min-free-gb` or the project grows past `--max-project-gb` (6 GB), and
+says which. A server left running by an earlier `--serve` is stopped first. Packing only reads the checkouts
+through git.
+
+Measured on 2026-10-03 (6000.0.41f1, Medium, all six packages, first build from an empty Library): editor run
+175 s, BuildReport 146 s, about 3 min 10 s end to end. Build 15.3 MB: `.wasm` 11.3 MB, `.data` 3.7 MB, framework
+344 KB, loader 19 KB. The project peaked at 268 MB during the build. Deleting `Library/Bee/artifacts/WebGL` freed
+194 MB, leaving a 68 MB Library and an 84 MB project. Free disk stayed above 11 GB. Sizes here are decimal; the
+script prints binary units (`MB` = MiB).
+
+**Status on 2026-10-03: the gate passes.** The IL2CPP WebGL player built at Medium reported
+`OPENUGD-IL2CPP: PASS 29/29` in headless Chrome, `child-context` included.
+
+### Output and exit status
+
+The report goes to `<project>/Logs/upm-tools/il2cpp-smoke-report.json`, the editor log to
+`<project>/Logs/upm-tools/<editor>-<stamp>-build-<level>.log`, the server's log to `.../server.log`. The last line is
+`IL2CPP SMOKE: PASS (<summary>)`, `FAIL`, `NOT RUN TO THE END`, or, with `--no-check`,
+`BUILT AND SERVED, PLAYER NOT CHECKED`.
+
+Exit status:
+- 0: the player reported PASS, or with `--no-check`, the build and the HTTP checks passed;
+- 1: the gate failed: a compile or build error, an incomplete build folder, an HTTP error, a tracked file missing
+  from a tarball, or the player reported FAIL, a malformed summary or nothing within `--check-timeout`;
+- 2: the tools could not run: the project is inside git or in use, too little disk, the build was stopped, an
+  invalid licence, an editor timeout, a package that cannot be packed, or no browser without `--no-check`.
+
+A licence failure is recognised from the editor log ("No valid Unity Editor license", "License is not active" and
+similar). The script then says to sign in to Unity Hub and run again.
+
+Limits:
+- One target (WebGL) and one player configuration. Mac, iOS and Android IL2CPP players are not built. Code
+  generation is IL2CPP's default ("Faster runtime").
+- Default exception support: a `NullReferenceException` raised by the runtime is not catchable in this player. The
+  checks therefore test for null rather than dereference, and a crash shows as no summary (`NO RESULT`).
+- Headless Chrome renders WebGL through SwiftShader. The checks never depend on rendering.
+
 ## release-check.sh: before tagging
 
 ```sh
@@ -505,7 +643,7 @@ could not run.
 
 | File | Holds |
 | --- | --- |
-| `config/family.json` | checkout root, smoke project path, the package repos in dependency order, finish targets, the planned release version and Unity minimum (`release`) |
+| `config/family.json` | checkout root, smoke project path, the IL2CPP smoke project path (`il2cppSmokeProject`), the package repos in dependency order, finish targets, the planned release version and Unity minimum (`release`) |
 | `config/unity/<version>.json` | package-version map, global defines (common/editor/player), `noWarn`, which Unity packages are compiled from source |
 | `config/test-floors.json` | minimum passed tests per test asmdef |
 
@@ -522,4 +660,10 @@ fence extraction with the opt-out marker, the `.meta` check on a throwaway git r
 (only committed files, npm's ignore rules reported, samples copied out of the tarball; the npm case is skipped
 without npm), and `release-check.sh` on a throwaway family of two or three packages (version refusal, an existing
 tag, README pins and dependency lists, CHANGELOG headings, dependency minimums, `.meta` read from HEAD, a dirty
-worktree, layered tag commands, blocking through a dependency's dependency).
+worktree, layered tag commands, blocking through a dependency's dependency), and `il2cpp-smoke.sh`. Its tests cover the
+summary and check-line parsing, `Boot.Checks` against the checks the script runs, the project refresh and manifest,
+the build-folder check, the disk guard (a real process group stopped), licence detection, the server (start, 200s,
+`application/wasm`, `--stop`), and the headless check against a local page (skipped without Chrome). They run `main()`
+end to end against a fake editor (`tests/fixtures/il2cpp-smoke/fake_unity.py`) for a licence failure, a compile
+error, a passing and a failing page. Finally they compile the template's C# against the checkouts with the editor's
+Roslyn and run the engine-free checks on Mono before and after UnityLinker (skipped without the default editor).
