@@ -13,7 +13,7 @@ and the stripped player's runtime are exercised too:
      Level Medium (--stripping high for High), compression Disabled; build errors fail the run;
   3. check the build folder (index.html, the loader, framework, .data and .wasm), print build time, build size,
      Library size and free disk, and delete the bulky intermediates (the final build is kept);
-  4. serve the build with python3 -m http.server on a free localhost port, check that index.html and the .wasm
+  4. serve the build with lib/static_server.py on a free localhost port, check that index.html and the .wasm
      answer 200, and open the page in headless Chrome (a throwaway profile) until document.title carries the
      player's summary line, "OPENUGD-IL2CPP: PASS <n>/<n>" or "OPENUGD-IL2CPP: FAIL <k>/<n> <names>";
   5. stop the server, or with --serve leave it running and print its URL and how to stop it.
@@ -329,10 +329,14 @@ def free_port(host='127.0.0.1'):
         return s.getsockname()[1]
 
 
+# The server is local: never route its checks through a system or environment proxy.
+_LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
 def http_get(url, method='GET', timeout=10):
     """(status, content type, bytes) or (None, error text, 0)."""
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, method=method), timeout=timeout) as r:
+        with _LOCAL.open(urllib.request.Request(url, method=method), timeout=timeout) as r:
             body = r.read() if method == 'GET' else b''
             return r.status, r.headers.get('Content-Type', ''), int(r.headers.get('Content-Length') or len(body))
     except urllib.error.HTTPError as e:
@@ -341,24 +345,40 @@ def http_get(url, method='GET', timeout=10):
         return None, str(getattr(e, 'reason', e)), 0
 
 
-def start_server(directory, port, log_path, wait=10):
-    """python3 -m http.server on 127.0.0.1:port in its own session, so it outlives this script. Returns the
+SERVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static_server.py')
+
+
+def log_tail(path, lines=10):
+    try:
+        with open(path, 'rb') as f:
+            return b'\n'.join(f.read().splitlines()[-lines:]).decode('utf-8', 'replace')
+    except OSError:
+        return ''
+
+
+def start_server(directory, port, log_path, wait=20):
+    """lib/static_server.py on 127.0.0.1:port in its own session, so it outlives this script. Returns the
     process, or raises RuntimeError when it does not answer within `wait` seconds."""
     log = open(log_path, 'ab')
-    proc = subprocess.Popen([sys.executable, '-m', 'http.server', str(port), '--bind', '127.0.0.1', '--directory',
-                             directory], cwd=directory, stdin=subprocess.DEVNULL, stdout=log,
-                            stderr=subprocess.STDOUT, start_new_session=True)
+    proc = subprocess.Popen([sys.executable, SERVER, '--port', str(port), '--directory', directory], cwd=directory,
+                            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     log.close()
     deadline = time.time() + wait
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError('the server exited with %s; see %s' % (proc.returncode, log_path))
+            raise RuntimeError('the server exited with %s; see %s\n%s' % (proc.returncode, log_path,
+                                                                          log_tail(log_path)))
         status, _, _ = http_get('http://127.0.0.1:%d/' % port, method='HEAD', timeout=2)
         if status is not None:
             return proc
         time.sleep(0.2)
     proc.terminate()
-    raise RuntimeError('the server did not answer on port %d within %d s' % (port, wait))
+    raise RuntimeError('the server did not answer on port %d within %d s; last error: %s\n%s'
+                       % (port, wait, _last_error(port), log_tail(log_path)))
+
+
+def _last_error(port):
+    return http_get('http://127.0.0.1:%d/' % port, method='HEAD', timeout=2)[1]
 
 
 def server_state_path(project):
@@ -366,10 +386,10 @@ def server_state_path(project):
 
 
 def is_our_server(pid, port):
-    """True when pid is alive and is the http.server this script started on port."""
+    """True when pid is alive and is the static server this script started on port."""
     p = subprocess.run(['ps', '-p', str(pid), '-o', 'command='], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     command = p.stdout.decode('utf-8', 'replace')
-    return 'http.server' in command and str(port) in command.split()
+    return 'static_server.py' in command and str(port) in command.split()
 
 
 def stop_server(project, quiet=False):

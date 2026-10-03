@@ -502,10 +502,12 @@ installed here has no Mac IL2CPP module, so the player is WebGL, which is always
    per file, the largest folders in `Library`, then deletes `Library/Bee/artifacts/WebGL` (IL2CPP's C++ and the
    compiled objects), `Library/Il2cppBuildCache`, `Library/PlayerDataCache` and `Temp` unless `--keep-intermediates`
    is given, and prints Library size, project size and free disk.
-4. **Server.** It starts `python3 -m http.server --bind 127.0.0.1 --directory <build>` on a free port (or `--port`)
-   in its own session and checks that `index.html`, the loader, framework, `.data` and `.wasm` answer 200. It prints
-   each content type; Python 3.9's `http.server` sends the `.wasm` as `application/wasm`, which Unity's loader needs
-   for streaming compilation. The PID and URL go to `Logs/upm-tools/server.json`.
+4. **Server.** It starts `lib/static_server.py --port <port> --directory <build>` (Python's `http.server` handler on
+   127.0.0.1, without the reverse DNS lookup that `python3 -m http.server` does before listening, which can stall for
+   long on CI hosts) on a free port (or `--port`) in its own session, and checks, bypassing any proxy, that
+   `index.html`, the loader, framework, `.data` and `.wasm` answer 200. It prints each content type; the `.wasm` is
+   always sent as `application/wasm`, which Unity's loader needs for streaming compilation. The PID and URL go to
+   `Logs/upm-tools/server.json`.
 5. **Headless check.** It opens the page in headless Chrome, driven over the DevTools protocol through
    `--remote-debugging-pipe` with a throwaway profile (the user's own Chrome profile is never used), and waits up
    to `--check-timeout` seconds for `document.title` to carry the summary. It prints every check line from the
