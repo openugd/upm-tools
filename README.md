@@ -1,8 +1,11 @@
 # upm-tools
 
-Regression tooling for the OpenUGD package family (`com.openugd.*`). It implements the two-level gate
-from the v2 decisions ("CI у два рівні") and audit item P0-6. The tooling lives here, not in any package
-repo, because it checks all the packages side by side.
+[![CI](https://github.com/openugd/upm-tools/actions/workflows/ci.yml/badge.svg)](https://github.com/openugd/upm-tools/actions/workflows/ci.yml)
+
+Regression tooling for the OpenUGD package family (`com.openugd.*`). It checks the packages at two levels.
+Level 1 needs no Unity licence; run it on every commit. CI runs it on every push to `main` and every pull
+request in this repository, every Monday and on demand (see [CI](#ci)). Level 2 starts a real Unity editor
+before a release. The tooling lives here, not in any package repo, because it checks all the packages side by side.
 
 | Script | When to run it | Needs | Typical time |
 | --- | --- | --- | --- |
@@ -12,9 +15,38 @@ repo, because it checks all the packages side by side.
 | `level2.sh --tarball` | before tagging: installs each package as OpenUPM would publish it | Unity with an activated licence; npm (optional) | packing 6 packages: about 40 s, then as above |
 | `il2cpp-smoke.sh` | before a release; after changes to registration, `[Inject]`, commands, presenters or `SignalBase` | Unity with an activated licence and its WebGL module; Chrome for the headless check | about 3 min from an empty Library |
 | `release-check.sh` | right before tagging, per package | git | 1-2 s |
-| `finish.sh` | when a feature branch (`sourceBranch`, `feature/v2-exec` for 2.0) is ready to land in the main checkouts; 2.0 landed with it on 2026-10-03 | git | instant |
+| `finish.sh` | maintainer only: fast-forwards release branches in the maintainer's local repositories (see [below](#finishsh-landing-the-work-maintainer-only)); not needed to check the packages | git | instant |
 
 Every script prints its options with `--help`. None of them pushes, tags, adds a remote or rewrites history.
+
+## Quick start
+
+You do not need this repository to use the packages: install them from OpenUPM as each package's README
+describes (see <https://github.com/openugd>). This repository is for checking changes to the packages.
+
+To run level 1 on macOS without the folder layout described under [Requirements](#requirements), clone the
+package repos next to this one and point the tools at them (Python 3.9 or newer and the .NET SDK 10 are
+needed; see Requirements):
+
+```sh
+python3 ci/clone-packages.py --dest ../packages      # one shallow clone per package repo, default branches
+OPENUGD_ROOT=../packages ./level1.sh
+```
+
+`clone-packages.py --ref 2.0.0` checks out the `2.0.0` tag of each of the six packages released together as
+2.0.0 instead of its default branch; `upm-configuration`, which is not part of that release, stays on its
+default branch (`main`).
+
+On a machine without Unity 6000.0.41f1 installed through Unity Hub, fetch the editor files level 1 reads first
+(it streams the 5 GB installer and keeps about 2.3 GB; nothing is installed and no licence is needed), and tell
+the tools where they are:
+
+```sh
+python3 ci/fetch-editor.py --version 6000.0.41f1 --changeset 46e447368a18 --dest ../unity-editors
+OPENUGD_UNITY_EDITORS=../unity-editors OPENUGD_ROOT=../packages ./level1.sh
+```
+
+Both variables are relative to the current directory. This is what CI does (see [CI](#ci)).
 
 ## Requirements
 
@@ -34,11 +66,14 @@ Every script prints its options with `--help`. None of them pushes, tags, adds a
 
 The package checkouts are found under `config/family.json` → `root`, one folder per repo (`upm-lifetime`,
 `upm-signal`, `upm-context`, `upm-corelib`, `upm-corelib-widgets`, `upm-ui`). Override it with `--root` or
-`OPENUGD_ROOT` (relative to the current directory).
+`OPENUGD_ROOT` (relative to the current directory). These six are the packages released together as 2.0.0,
+called "the train" below and in `config/family.json`. `upm-configuration` (`com.openugd.configuration` 0.x) is
+not part of it; level 1 checks it when `--packages` names it.
 
 Paths in `config/family.json` (`root`, `smokeProject`, `il2cppSmokeProject`) may be absolute, start with `~`, or
 be relative; a relative one is resolved against the upm-tools folder, not the current directory, so the scripts
-behave the same from anywhere. The committed defaults assume the author's layout:
+behave the same from anywhere. The committed defaults are the maintainer's layout, in which the package
+checkouts sit under `Assets/` of a local Unity project (`OpenUGD/`, not published):
 
 ```
 <workspace>/
@@ -99,9 +134,10 @@ gave wrong results in an earlier harness:
 
 Unity evaluates `versionDefines` against the packages installed in the project. Level 1 evaluates them
 against a package-version map, `config/unity/<editor version>.json`.
-- The default map, `6000.0.41f1.json`, lists the Unity packages the OpenUGD host project resolves on
-  6000.0.41f1 (its `Packages/manifest.json` and `packages-lock.json`): `com.unity.ugui` 2.0.0,
-  `com.unity.test-framework` 1.4.6, `com.unity.ext.nunit` 2.0.5 and its `com.unity.modules.*` set.
+- The default map, `6000.0.41f1.json`, was taken from the `Packages/manifest.json` and `packages-lock.json`
+  of the maintainer's local Unity 6000.0.41f1 project. It lists `com.unity.ugui` 2.0.0,
+  `com.unity.test-framework` 1.4.6, `com.unity.ext.nunit` 2.0.5 and the 32 built-in modules listed in that
+  manifest, not the modules those pull in as dependencies (such as `com.unity.modules.subsystems`).
 - The editor itself is entered under the name `Unity`.
 - The family's own `package.json` versions are added at run time.
 
@@ -285,7 +321,7 @@ Exit status: 0 if every step passed, 1 if the gate failed, 2 if the tools could 
 ### What level 1 cannot see
 
 - How the code behaves on Mono or IL2CPP. Tests run on CoreCLR.
-- PlayMode, and anything that calls into the engine.
+- PlayMode behaviour (Unity's player loop), and anything that calls into the engine.
 - Package resolution and the immutable-folder behaviour of a real install.
 - `.meta` files Unity would rewrite. Level 2 caught five such files in context.
 - Unity's source generators, which Unity runs as analyzers and level 1 does not.
@@ -294,9 +330,10 @@ Exit status: 0 if every step passed, 1 if the gate failed, 2 if the tools could 
 - A use of an engine module that leaves no reference in the compiled metadata (see
   [Built-in modules](#built-in-modules-the-deps-step)).
 
-`harness/run.sh` is kept for callers of the seed harness. It runs `level1.sh --steps build,tests`.
+`harness/run.sh` is an older entry point, kept for scripts that still call it. It runs
+`level1.sh --steps build,tests`.
 
-## linker-gate.sh: IL2CPP stripping of context, commands and presenters (P0-4)
+## linker-gate.sh: IL2CPP stripping of context, commands and presenters
 
 ```sh
 ./linker-gate.sh                                   # 6000.0.41f1, Medium and High
@@ -341,12 +378,13 @@ For each editor the gate:
    from the container. A scenario that throws prints its exception, so a stripped constructor shows up as the
    container's own message.
 
-**Status on 2026-10-03: the gate passes** on 6000.0.41f1 and 6000.3.3f1 at Medium and High (47 checks per
-column). That it can fail was checked on a copy of the checkouts: removing `[DynamicallyAccessedMembers]` from
-`RegisterCommand<TCommand>` strips `BuyCommand`'s constructor (the registration then throws "has no public
-instance constructor") and produces `IL2087`; removing it from `ContextPresenterFactory.Create` produces
-`IL2067` and `IL2092`. Before the P0-4 fix in context (2026-10-02) the context half failed: constructors and
-`[Inject]` property setters were stripped and the container refused to build.
+**Status on 2026-10-03 (last local run): the gate passes** on 6000.0.41f1 and 6000.3.3f1 at Medium and High
+(47 checks per column). CI runs it on 6000.0.41f1 only. That it can fail was checked on a copy of the checkouts:
+removing `[DynamicallyAccessedMembers]` from `RegisterCommand<TCommand>` strips `BuyCommand`'s constructor (the
+registration then throws "has no public instance constructor") and produces `IL2087`; removing it from
+`ContextPresenterFactory.Create` produces `IL2067` and `IL2092`. Before context gained its stripping support (2026-10-02: `[Inject]` derived from a linker
+`Preserve` attribute, `[DynamicallyAccessedMembers]` on the registration entry points), the context half failed:
+constructors and `[Inject]` property setters were stripped and the container refused to build.
 
 A wrapper with an unannotated type parameter around `Add<T>()` in user code makes the gate fail. It
 produces `IL2091 ... 'OpenUGD.ServiceCollectionExtensions.Add<TImpl>(...)'`, and the stripped container
@@ -419,7 +457,7 @@ checkout instead of `has no meta file`. That message only appears for immutable 
 or tarball: use `--tarball` for that. The script never commits or reverts anything in the checkouts. Review
 what it reports and commit or discard it yourself.
 
-### --tarball: the install users will get (PK-9)
+### --tarball: the install users will get
 
 OpenUPM clones a repository at its tag and publishes it with npm. `--tarball` reproduces that for each
 selected package without a tag (`lib/pack.py`):
@@ -472,8 +510,8 @@ not be packed. With `--no-editor` it is 0 when preparing (and packing) found not
 ```
 
 The linker gate strips with the real UnityLinker but runs the result on desktop Mono. This script builds an actual
-IL2CPP player, so AOT compilation, IL2CPP's generic sharing and the stripped runtime are exercised too. The editor
-installed here has no Mac IL2CPP module, so the player is WebGL, which is always IL2CPP.
+IL2CPP player, so AOT compilation, IL2CPP's generic sharing and the stripped runtime are exercised too. The player
+is WebGL, which is always IL2CPP, so the editor's Mac IL2CPP module is not needed.
 
 1. **Project.** It packs each family package from its checkout's HEAD the way OpenUPM publishes a tag (`lib/pack.py`,
    as `level2.sh --tarball` does) into `<project>/Tarballs`. It then creates or refreshes the throwaway project,
@@ -564,8 +602,8 @@ script prints binary units (`MB` = MiB).
 At High, right after (Library warm, IL2CPP output deleted): editor run 115 s, BuildReport 98 s. Build 14.0 MB:
 `.wasm` 10.3 MB, `.data` 3.3 MB. Peak 239 MB, 162 MB freed afterwards.
 
-**Status on 2026-10-03: the gate passes.** The IL2CPP WebGL players built at Medium and at High each reported
-`OPENUGD-IL2CPP: PASS 29/29` in headless Chrome, `child-context` included.
+**Status on 2026-10-03 (last local run): the gate passes.** The IL2CPP WebGL players built at Medium and at High
+each reported `OPENUGD-IL2CPP: PASS 29/29` in headless Chrome, `child-context` included.
 
 ### Output and exit status
 
@@ -603,7 +641,7 @@ It reads the committed tree of each checkout's HEAD, which is what a tag would p
 
 | Check | Fails when |
 | --- | --- |
-| `version` | `package.json` `version` is not the planned version (`--version`, default `release.version` in `config/family.json`: `2.0.0`). The tag is the version itself, as the existing tags are (`1.2.0`, `0.6.1`), so this is the "tag does not equal package.json version" refusal. The decision report records that this happened once: corelib's tag `1.2.0` published as `0.2.0` (the commit titled `1.2.0`, `1df0781`, sets `version` to `0.2.0`). |
+| `version` | `package.json` `version` is not the planned version (`--version`, default `release.version` in `config/family.json`: `2.0.0`). The tag is the version itself, as the existing tags are (lifetime's `1.2.0`, corelib's `0.6.1`), so this is the "tag does not equal package.json version" refusal. This has happened once: corelib's tag `1.2.0` (since deleted) was published on OpenUPM as `0.2.0` (the commit titled `1.2.0`, `1df0781`, sets `version` to `0.2.0`). |
 | `tag` | a tag of that name already exists and does not point at HEAD. A published version cannot change. |
 | `changelog` | the first `## ` heading of `CHANGELOG.md` is neither `## [Unreleased]` nor `## [<version>]`, or the file has both (one release, two sections). An `[Unreleased]` heading passes with a note: rename it `## [<version>] - <date>` in a release commit, then run the check again, because the printed tag command names the HEAD that was checked. |
 | `readme` | the `README.md` section whose heading starts with "Install" does not pin the version in all three forms: `openupm add <name>@<version>`, a scoped-registry entry `"<name>": "<version>"`, and a git URL `"<name>": "<repository>.git#<version>"` matching `package.json` `repository`. The git form must also list every family package the package needs, transitively, each pinned to a tag of the same major at or above the declared minimum, because git URLs do not resolve OpenUPM dependencies. |
@@ -627,17 +665,23 @@ run the gates: run `level1.sh`, `linker-gate.sh` and `level2.sh --tarball` on th
 
 Exit status: 0 every package is ready, 1 at least one is not, 2 the tools could not run.
 
-## finish.sh: landing the work
+## finish.sh: landing the work (maintainer only)
 
 ```sh
 ./finish.sh            # dry run: what `git merge --ff-only` would do in each main checkout
 ./finish.sh --apply    # do it where it is safe
 ```
 
+This script is for the maintainer's own machine and is not needed to check the packages. It assumes that each
+folder under `--root` is a linked checkout of a local repository (its main checkout), on the branch `sourceBranch`
+(`feature/v2-exec` for 2.0), and that `target` is a branch of that repository. The source branch, and the
+`feature/v2` targets, exist only in the maintainer's local repositories, not on GitHub, so with ordinary clones
+each package repo is reported as blocked ("branch ... does not exist") and the script exits with 1.
+
 The script reads the repos from `config/family.json`:
 - `packages[].target`: `feature/v2`, or `main` for `upm-context`;
-- `finishExtra`: the host project (`main`); its `path` is used when `<root>/host` does not exist (relative to the
-  upm-tools folder, like every path in the file);
+- `finishExtra`: the maintainer's local Unity project that holds the checkouts (`main`); its `path` is used when
+  `<root>/host` does not exist (relative to the upm-tools folder, like every path in the file);
 - `held`: branches the script never merges, only reports, each with the reason. Empty now: for 2.0 it held
   `upm-dependency-injection`'s `feature/deprecation-banner`, merged by hand once `com.openugd.context` 2.0.0 was
   live on OpenUPM;
@@ -664,7 +708,7 @@ could not run.
 
 | File | Holds |
 | --- | --- |
-| `config/family.json` | checkout root, smoke project path, the IL2CPP smoke project path (`il2cppSmokeProject`), the package repos in dependency order, finish targets, the planned release version and Unity minimum (`release`) |
+| `config/family.json` | checkout root, smoke project path, the IL2CPP smoke project path (`il2cppSmokeProject`), the package repos in dependency order, the branches `finish.sh` uses (maintainer only), the planned release version and Unity minimum (`release`) |
 | `config/unity/<version>.json` | package-version map, global defines (common/editor/player), `noWarn`, which Unity packages are compiled from source |
 | `config/test-floors.json` | minimum passed tests per test asmdef |
 
@@ -698,8 +742,9 @@ on their own) and on demand:
 
 - **lint** (Ubuntu 24.04, pinned because Python 3.9 has no build for 26.04): `lib/`, `tests/` and `ci/` compile on
   Python 3.9, the oldest supported; every `*.sh` parses; every `config` JSON parses.
-- **gates** (macOS 15, arm64): the tools' own tests, `level1.sh` on the train, `level1.sh --packages
-  upm-configuration`, and `linker-gate.sh`, each run even when an earlier one failed. The reports and logs
+- **gates** (macOS 15, arm64): the tools' own tests, `level1.sh` on the train (the six packages released
+  together as 2.0.0), `level1.sh --packages upm-configuration`, and `linker-gate.sh`, each run even when an
+  earlier one failed. The reports and logs
   (`level1-report.json` and the summary of each level 1 run, its restore log and build logs,
   `linker-gate-report.json` and the UnityLinker logs) are uploaded as the `gate-reports` artifact.
 
@@ -714,7 +759,18 @@ fetch, so a failing gate does not cost the next run the 5 GB download. A stalled
 (`packages-ref`, for example `2.0.0`); the repos outside the train stay on their default branch.
 
 `level2.sh` and `il2cpp-smoke.sh` start the editor, so they need a full install with an activated licence and are
-not in CI: run them on a machine where Unity is installed.
+not in CI: run them on a machine where Unity is installed. CI therefore runs no `RequiresUnity` test.
+Of the PlayMode test assembly `com.openugd.corelib.playmode.tests` it runs only the engine-free tests, on CoreCLR
+and outside Unity's player loop.
+The badge at the top shows the result of the CI gates. The dated statuses in this README ("Status on
+2026-10-03") are the last local runs of what CI does not cover: the IL2CPP players and the linker gate on
+6000.3.3f1. Level 2, with the `RequiresUnity` and PlayMode tests, was run locally in Unity 6000.0.41f1 before
+the 2.0.0 release.
+
+GitHub disables scheduled workflows in a public repository after 60 days without repository activity, so the
+Monday run needs an occasional commit to this repository. If it has been disabled, enable it again in the
+Actions tab (or with `gh workflow enable ci.yml`). A manual run (Run workflow) checks the package repos at any
+time.
 
 To reproduce the CI job locally:
 

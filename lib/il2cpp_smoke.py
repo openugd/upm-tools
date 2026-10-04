@@ -2,8 +2,8 @@
 """IL2CPP smoke: build one IL2CPP player of the package family at Medium stripping and check that it boots a container.
 
 The linker gate runs the real UnityLinker but executes the stripped assemblies on desktop Mono. This builds an actual
-IL2CPP player - WebGL, the IL2CPP target every editor install here has (WebGL is always IL2CPP) - so AOT compilation
-and the stripped player's runtime are exercised too:
+IL2CPP player - WebGL, which is always IL2CPP and needs no Mac IL2CPP module - so AOT compilation and the stripped
+player's runtime are exercised too:
 
   1. pack each family package from its checkout's HEAD the way OpenUPM publishes a tag (lib/pack.py) and create or
      refresh the throwaway project (default: config/family.json "il2cppSmokeProject", which must be outside every git

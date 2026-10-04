@@ -1,11 +1,11 @@
 {
-  "description": "The OpenUGD package family as the tools see it. 'root' holds one checkout (or worktree) per repo; OPENUGD_ROOT or --root overrides it. Relative paths here ('root', 'smokeProject', 'il2cppSmokeProject') are relative to the upm-tools folder; the defaults assume the author's layout, with upm-tools in <workspace>/v2/repos/ and the packages in <workspace>/OpenUGD/Assets. 'packages' is the default set for level1/level2, in dependency order. finish.sh fast-forwards 'target' to 'source' in the main checkout that owns each worktree.",
+  "description": "The OpenUGD package family as the tools see it. 'root' holds one checkout per package repo, in a folder named after the repo; OPENUGD_ROOT or --root overrides it. Relative paths here ('root', 'smokeProject', 'il2cppSmokeProject') are relative to the upm-tools folder; the committed defaults are the maintainer's layout (upm-tools in <workspace>/v2/repos/, the packages under <workspace>/OpenUGD/Assets), so on another machine pass --root or set OPENUGD_ROOT (README.md, Quick start). 'packages' is the default set for level1/level2, in dependency order: the six packages released together as 2.0.0 ('the train'). 'sourceBranch', each 'target', 'finishExtra' and 'held' are read only by finish.sh, a maintainer-only script that fast-forwards 'target' to the source branch in the maintainer's local repositories.",
   "root": "../../../OpenUGD/Assets",
   "smokeProject": "../../smoke",
   "il2cppSmokeProject": "../../il2cpp-smoke",
   "sourceBranch": "feature/v2-exec",
   "release": {
-    "description": "release-check.sh: the version the train is tagged as (each tag equals package.json 'version', no prefix, as the existing tags are) and the 'unity' minimum every package declares (DECISIONS-v2: minimum Unity 6000.0).",
+    "description": "release-check.sh: the version the train is tagged as (each tag equals package.json 'version', no prefix, as the existing tags are) and the 'unity' minimum every package declares (Unity 6000.0).",
     "version": "2.0.0",
     "unity": "6000.0"
   },

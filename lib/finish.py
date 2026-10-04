@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""finish: land the v2 work branches in the author's main checkouts by fast-forward, and nothing else.
+"""finish (maintainer only): land a release branch in the maintainer's local repositories by fast-forward, and
+nothing else. It assumes each folder under --root is a linked checkout on the source branch of config/family.json;
+those branches are not on GitHub, so with ordinary clones every package repo is reported as blocked.
 
-For each package repo, the host project and the extra entries in config/family.json, find the main
+For each package repo and each "finishExtra" entry in config/family.json, find the main
 checkout that owns the worktree under --root (git rev-parse --git-common-dir), then show what
 `git merge --ff-only <source>` into <target> would do there: commits, files changed, whether it is a
 fast-forward, and whether the checkout is clean and on <target>.
@@ -63,7 +65,7 @@ def rev(repo, ref):
 def inspect(e, root):
     wt = os.path.join(root, e['repo'])
     if not os.path.isdir(wt) and e.get('path'):
-        wt = config_path(e['path'])   # an entry that does not live under root (the host project)
+        wt = config_path(e['path'])   # an entry that does not live under root (the maintainer's local Unity project)
     r = dict(e, worktree=wt, main=None, action='', detail='', commits=[], stat='', ahead=0, behind=0)
     if not os.path.isdir(wt):
         r['action'], r['detail'] = 'skip', 'no worktree at %s' % wt

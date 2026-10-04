@@ -1,5 +1,5 @@
 {
-  "description": "Unity packages the OpenUGD host project resolves on 6000.0.41f1 (Packages/manifest.json and packages-lock.json): every versionDefines and defineConstraints in the family is evaluated against this map plus the family's own package.json versions. Defines and noWarn mirror Unity's own compiler response files (Library/Bee/artifacts/*.rsp) for a macOS editor; the player list models a release IL2CPP standalone build.",
+  "description": "Unity packages of the maintainer's local 6000.0.41f1 project (Packages/manifest.json and packages-lock.json): com.unity.ugui, com.unity.test-framework, com.unity.ext.nunit and the 32 built-in modules listed in the manifest, not the modules those pull in as dependencies (such as com.unity.modules.subsystems); every versionDefines and defineConstraints in the family is evaluated against this map plus the family's own package.json versions. Defines and noWarn mirror Unity's own compiler response files (Library/Bee/artifacts/*.rsp) for a macOS editor; the player list models a release IL2CPP standalone build.",
   "unity": "6000.0.41f1",
   "packages": {
     "com.unity.ugui": "2.0.0",

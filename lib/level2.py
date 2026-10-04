@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Level 2: the real-Unity gate, run on the author's machine with the licence already activated in Unity Hub.
+"""Level 2: the real-Unity gate, run on a machine with Unity installed and its licence activated in Unity Hub.
 
 For each editor (default 6000.0.41f1):
   1. create or refresh the smoke project (default: config/family.json "smokeProject") from

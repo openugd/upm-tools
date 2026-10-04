@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Linker gate: run the real UnityLinker of an installed editor over a probe that uses com.openugd.context, and
 corelib's commands and presenters, the way a game does, and fail unless they still work after Medium and High
-managed code stripping (audit P0-4).
+managed code stripping.
 
 Pipeline, per editor:
   1. compile the family assemblies the probe needs from the package sources, each against the references its

@@ -54,7 +54,7 @@ class ExpressionTests(unittest.TestCase):
 
 
 class VersionDefinesTests(unittest.TestCase):
-    TMP_SUB_ASSEMBLY = {  # the shape decision 5 prescribes for com.openugd.corelib.widgets.tmp
+    TMP_SUB_ASSEMBLY = {  # an optional TextMeshPro sub-assembly: TMP 3.0.0+ or uGUI 2.0.0+ (which includes TMP)
         'defineConstraints': ['OPENUGD_WIDGETS_TMP'],
         'versionDefines': [
             {'name': 'com.unity.textmeshpro', 'expression': '3.0.0', 'define': 'OPENUGD_WIDGETS_TMP'},

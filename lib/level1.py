@@ -65,8 +65,8 @@ def parse_args(argv):
                     help='after a green test run, raise each floor in the floors file to the passed count')
     ap.add_argument('--jobs', type=int, default=max(2, (os.cpu_count() or 4)), help='parallel builds')
     ap.add_argument('--details', type=int, default=400, help='max diagnostic lines to print (default 400)')
-    # Accepted for callers of the seed harness (harness/gen.py); Unity package assemblies now come from the
-    # editor itself, so there is nothing to point at.
+    # Accepted and ignored, for older callers; Unity package assemblies now come from the editor itself, so there
+    # is nothing to point at.
     ap.add_argument('--script-assemblies', help=argparse.SUPPRESS)
     a = ap.parse_args(argv)
     a.steps = [s.strip() for s in a.steps.split(',') if s.strip()]
